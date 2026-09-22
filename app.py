@@ -80,6 +80,7 @@ PRESETS = [
     "I'm locked out of my account",
     "My OneDrive has been stuck syncing for two days",
     "My external monitor isn't detected when docked",
+    "What's the weather like today?",
 ]
 
 
@@ -164,7 +165,7 @@ if st.session_state.result:
         st.success("Steps are in the reasoning above — user can action these directly.")
 
     elif path == "OUT_OF_SCOPE":
-        st.info("Outside IT support scope — no action taken.")
+        st.info("Outside IT support scope — no triage action taken.")
 
     elif path == "ESCALATE":
         if result["tool_name"] == "create_escalation_ticket":

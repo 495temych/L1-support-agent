@@ -217,7 +217,7 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
     for block in response.content:
         if block.type == "text":
             reasoning = block.text
-            for candidate in ("SELF_SERVE", "AUTO_FIX", "ESCALATE"):
+            for candidate in ("OUT_OF_SCOPE", "SELF_SERVE", "AUTO_FIX", "ESCALATE"):
                 if candidate in block.text:
                     path = candidate
                     break
