@@ -7,7 +7,16 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 import streamlit as st
-# Always reload agent so Streamlit picks up code changes without a server restart.
+
+# One-time module reloads per Streamlit session so code changes in retrieval.py
+# and agent.py are picked up without a full server restart.
+# retrieval is reloaded only once (resetting its model cache is expensive);
+# agent is cheap to reload so we do it on every script run.
+if "modules_reloaded" not in st.session_state:
+    import retrieval as _retrieval_mod
+    importlib.reload(_retrieval_mod)
+    st.session_state.modules_reloaded = True
+
 import agent as _agent_mod
 importlib.reload(_agent_mod)
 from agent import run_triage
