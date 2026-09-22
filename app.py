@@ -12,15 +12,20 @@ import streamlit as st
 # and agent.py are picked up without a full server restart.
 # retrieval is reloaded only once (resetting its model cache is expensive);
 # agent is cheap to reload so we do it on every script run.
+import tools as _tools_mod
+import agent as _agent_mod
+
 if "modules_reloaded" not in st.session_state:
+    # One-time reloads so code changes are picked up without a full server restart.
+    # retrieval + tools: reloaded once (retrieval has heavy model globals; tools has REGISTRY).
     import retrieval as _retrieval_mod
     importlib.reload(_retrieval_mod)
+    importlib.reload(_tools_mod)
     st.session_state.modules_reloaded = True
 
-import agent as _agent_mod
+# agent: cheap to reload on every run (picks up prompt/tool schema changes instantly).
 importlib.reload(_agent_mod)
 from agent import run_triage
-from tools import dispatch
 
 st.set_page_config(
     page_title="L1 Support Agent — Limmatica AG",
@@ -48,7 +53,7 @@ for key, default in [
 # ── Callbacks ───────────────────────────────────────────────────────────────────
 def _confirm():
     r = st.session_state.result
-    st.session_state.tool_result = dispatch(r["tool_name"], r["tool_input"] or {})
+    st.session_state.tool_result = _tools_mod.dispatch(r["tool_name"], r["tool_input"] or {})
     st.session_state.tool_state = "confirmed"
 
 
