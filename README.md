@@ -1,6 +1,8 @@
 # TriagePilot — L1 IT Support Agent
 
-Most first-line IT support tickets resolve the same way: match the user's description to a known procedure, hand back a checklist, run a script, or route to the right team. The bottleneck is not the fix — it's the dispatch delay between a user submitting a ticket and a technician recognising the pattern. TriagePilot automates that pattern-matching step using retrieval-augmented generation: it embeds the organisation's internal KB articles, retrieves the most relevant one for each incoming issue, and uses a language model to classify the issue into one of four outcomes — with a human confirmation gate before any action is taken. The result is a demonstrable pipeline that compresses L1 triage from minutes to seconds while keeping a human in the loop at the only moment that matters.
+First-line IT support has a predictable bottleneck: a user submits a ticket, it sits in a queue until a technician notices it, the technician identifies the pattern, looks up the procedure, and acts. The fix is rarely novel — but the dispatch delay is real. Industry benchmarks put L1 mean time to resolution (MTTR) at 4–8 hours for password resets and connectivity issues that take under two minutes to actually fix.
+
+TriagePilot compresses that gap. It embeds Limmatica AG's internal KB articles, retrieves the most relevant one for each issue, and classifies the ticket into one of four resolution paths — with a human in the loop at the only moment that matters. The plausible target: MTTR from hours to under 60 seconds for well-documented issue classes.
 
 ---
 
@@ -13,9 +15,9 @@ flowchart LR
     C --> D{"Decision"}
     D -- SELF_SERVE --> E["📋 Return steps\nUser acts directly"]
     D -- AUTO_FIX --> F["🔧 Propose fix\ntool call"]
-    D -- ESCALATE --> G["🎫 Propose ticket\ncreate_escalation_ticket"]
+    D -- ESCALATE --> G["🎫 Draft ticket\ncreate_escalation_ticket"]
     D -- OUT_OF_SCOPE --> H["🚫 Decline\npolitely"]
-    F --> I["👤 Human Confirmation\nConfirm / Cancel"]
+    F --> I["👤 Human confirmation\nConfirm / Cancel"]
     G --> I
     I -- Confirmed --> J["⚡ Action\nmocked tool / ticket"]
     I -- Cancelled --> K["Skipped\nno changes made"]
@@ -24,75 +26,86 @@ flowchart LR
 | Path | When | Operator action required? |
 |---|---|---|
 | **SELF_SERVE** | Fix is documented, safe, and user-executable | No — steps returned directly |
-| **AUTO_FIX** | Fix is documented, reversible, better run by agent | Yes — Confirm or Cancel before tool runs |
-| **ESCALATE** | Info missing, infra-side, or low confidence | Yes — Confirm or Cancel before ticket is created |
+| **AUTO_FIX** | Fix is documented, reversible, better run by the agent | Yes — Confirm or Cancel before tool runs |
+| **ESCALATE** | Info missing, infra-side issue, or low confidence | Yes — Confirm or Cancel before ticket is created |
 | **OUT_OF_SCOPE** | Not an IT support request | No — declined immediately |
 
 ---
 
-## Traditional L1 vs. TriagePilot
+## Why a knowledge base matters
 
-| Step | Traditional L1 | TriagePilot |
+Without retrieval, the model can only give generic advice — it has no way to know Limmatica's internal portal addresses, script paths, AD group names, or policy codes. The KB articles contain details that no pre-trained model could know:
+
+- `vpn-gp.limmatica.corp` — the GlobalProtect gateway address post-migration
+- `\\IT-TOOLS\Scripts\reset-vpn-profile.ps1` — the exact remediation script
+- `Finance-RW` — the AD group that governs shared-drive access for Finance users
+- `SEC-04` — the internal policy requiring escalation after 2+ lockouts in 24 h
+- Q1 2026 AnyConnect → GlobalProtect migration context
+
+**RAG on/off toggle in the demo**: pick any IT query, note the org-specific steps and retrieved document, then toggle RAG off and re-run — the model falls back to generic advice with no Limmatica context. The contrast is immediate.
+
+---
+
+## Where this could run
+
+| Integration point | How | ServiceNow field mapping |
 |---|---|---|
-| First response time | Minutes to hours (queue) | Seconds (embedding + LLM call) |
-| Knowledge source | Technician memory / shared wiki | Embedded KB, org-specific procedures |
-| Action execution | Ad-hoc, undocumented | Structured tool calls, logged with timestamp |
-| Human oversight | Every ticket, every step | Required only at the action confirmation step |
-| Out-of-scope detection | Human judgment | Automated — before any triage begins |
-| When info is missing | Technician asks follow-up | Escalates with explicit reasoning, no back-and-forth |
-| Audit trail | Free-text ticket comments | Tool call + confirmation + timestamp |
+| ServiceNow intake | REST API POST to `/api/now/table/incident` | `app.queue` → `assignment_group` |
+| Ticket ID | Auto-generated `INC{random}` (simulated) | `app.ticket_id` → `number` |
+| Caller | `current.user` resolved via Okta | `app.requested_by` → `caller_id` |
+| Priority | `P3-Normal` / `P2-High` / `P1-Critical` | `app.priority` → `priority` (3/2/1) |
+| Short description | One-sentence diagnostic from LLM | `app.summary` → `short_description` |
+| Category | IT Support / Endpoint | hardcoded → `category` |
+
+The tool schema (`create_escalation_ticket`) is already structured to map 1-to-1 onto a ServiceNow incident record. Wiring it to a real instance is a configuration change, not a redesign.
 
 ---
 
 ## Demo queries
 
-Each preset demonstrates a specific capability:
-
 | Query | Expected path | What it demonstrates |
 |---|---|---|
-| "My VPN keeps disconnecting" | AUTO_FIX → `reset_vpn_profile` | RAG on: cites the AnyConnect→GlobalProtect migration, SCEP cert, exact script path. RAG off: generic "try reinstalling" — no Limmatica-specific procedure. |
-| "Teams shows me as offline to everyone" | AUTO_FIX → `clear_teams_cache` | With RAG: checks build version first (26189 regression context). The retrieved doc determines the triage order. |
-| "I'm locked out of my account" | ESCALATE → `SEC-INCIDENT` or `DESKTOP-SUPPORT` | The agent escalates because lockout frequency isn't in the query, and per SEC-04 that distinction (routine vs. compromise) changes the entire path. Demonstrates the missing-info → escalate rule. |
-| "My OneDrive has been stuck syncing for two days" | ESCALATE → `M365-SYNC` | Ambiguous without knowing the user's department or filenames — agent escalates with reasoning rather than asking. |
-| "My external monitor isn't detected when docked" | ESCALATE → hardware team | Hardware-side issue with no software fix; agent correctly refuses AUTO_FIX. |
-| "What's the weather like today?" | OUT_OF_SCOPE | Gray badge, no retrieval, no tool call. The scope-check fires before any diagnosis. |
-
-**To demonstrate the RAG on/off contrast**: pick any IT query, note the retrieved document and org-specific steps, then toggle RAG off and re-run — the model falls back to generic advice with no Limmatica-specific context.
+| "My VPN keeps disconnecting" | AUTO_FIX → `reset_vpn_profile` | RAG on: cites the AnyConnect→GlobalProtect migration, SCEP cert, exact script path. RAG off: generic "try reinstalling." |
+| "Teams shows me as offline to everyone" | AUTO_FIX → `clear_teams_cache` | With RAG, checks build version first (26189 regression context). Retrieved doc determines triage order. |
+| "I'm locked out of my account" | ESCALATE → `SEC-INCIDENT` | Lockout frequency not in query; per SEC-04 that distinction (routine vs. compromise) changes the path. Demonstrates missing-info → escalate rule. |
+| "My OneDrive has been stuck syncing for two days" | ESCALATE → `M365-SYNC` | Ambiguous without knowing department or filenames — agent escalates with explicit reasoning. |
+| "My external monitor isn't detected when docked" | ESCALATE → hardware team | Hardware-side with no software fix; agent correctly refuses AUTO_FIX. |
+| "What's the weather like today?" | OUT_OF_SCOPE | Gray badge, no retrieval, no tool call. Scope-check fires before any diagnosis. |
 
 ---
 
 <details>
-<summary><strong>Design decisions</strong></summary>
+<summary><strong>RAG design decisions</strong></summary>
 
-**Why RAG over plain prompting?**
-The KB articles contain details no pre-trained model could know: internal portal addresses (`vpn-gp.limmatica.corp`), specific script paths (`\\IT-TOOLS\Scripts\reset-vpn-profile.ps1`), AD group names (`Finance-RW`), policy codes (`SEC-04`), and historical incident patterns (the Q1 2026 AnyConnect migration). Without retrieval, the model can only give generic advice. The RAG on/off toggle makes this contrast visible in seconds during a demo.
-
-**Why human-in-the-loop on both AUTO_FIX and ESCALATE?**
-AUTO_FIX is obvious: you shouldn't silently unlock accounts or restart production services. But ESCALATE also gets a confirmation gate — because opening a ticket routes to an on-call queue, starts an SLA clock, and notifies a technician. Both are consequential actions. The confirmation step is architecturally correct, not a safety hedge.
-
-**Why function calling (tool use) and not MCP?**
-The tools here are called via Anthropic's native tool-use API (`tools=` parameter in the `messages.create` call). MCP (Model Context Protocol) is the natural next step — it would let the agent discover and call external services (AD, Intune, ServiceNow) through a standardised interface without the tool definitions being hardcoded in the agent. The current implementation is intentionally self-contained so it can run without any external infrastructure.
-
-**Why single-shot classification?**
-Multi-turn dialogue would let the agent ask clarifying questions, but it also adds latency, requires session state management, and obscures the classification logic. The single-turn constraint forces the agent to be explicit about what information is missing and why — which produces better diagnostic summaries for the escalation ticket than an open-ended exchange would.
-
-**Why one file per KB article?**
-Each file is the retrieval unit. Chunking a single large document requires overlap tuning and introduces boundary ambiguity. One article per file gives clean, semantically coherent units with zero chunking overhead. At this corpus size it's unambiguously correct; revisit chunking when the corpus reaches hundreds of articles.
-
-**Why a similarity threshold (0.35)?**
-Without a threshold, retrieval always returns something — even for queries with no KB match — and the agent may hallucinate grounding from a weakly related article. The threshold makes the "no confident match" case explicit and keeps the RAG on/off comparison honest.
+- **One file per KB article** — each file is the retrieval unit. No chunking overhead, no boundary ambiguity. Semantically coherent units. Revisit chunking at hundreds of articles.
+- **Threshold 0.35** — without it, retrieval always returns something, even for queries with no KB match, and the model may hallucinate grounding. The threshold makes the "no confident match" case explicit.
+- **Sentence-level highlights** — same `all-MiniLM-L6-v2` model scores individual sentences against the query. Shows the reviewer exactly which lines triggered the retrieval decision. No additional dependencies.
+- **Single-shot classification** — multi-turn dialogue adds latency, requires session state, and obscures the classification logic. Single-turn forces the agent to be explicit about missing information, which produces better escalation summaries than open-ended exchanges.
+- **Human-in-the-loop on both AUTO_FIX and ESCALATE** — AUTO_FIX is obvious (don't silently unlock accounts). ESCALATE also gets a gate because opening a ticket routes to an on-call queue, starts an SLA clock, and notifies a technician. Both are consequential.
 
 </details>
 
 <details>
-<summary><strong>Known limitations</strong></summary>
+<summary><strong>Extending with MCP</strong></summary>
 
-- **Synthetic knowledge base.** All 10 KB articles were written for this demo. Real deployment needs actual company documentation, which varies widely in quality and coverage.
-- **Mocked tool execution.** No real actions are taken. Production integration requires service accounts with least-privilege access to AD, Intune, PaperCut, and ServiceNow.
-- **Small corpus (10 articles).** Embedding quality and threshold calibration need revalidation at scale. Top-k retrieval and optional re-ranking become necessary with hundreds of articles.
-- **Single-turn only.** The agent doesn't maintain conversation history. Some real L1 issues genuinely require back-and-forth — the current architecture can't handle those.
-- **No evaluation set.** The threshold (0.35) and model choice are set by inspection, not measured precision/recall against a labelled query set.
-- **Usernames as free text.** Tools accept usernames as unvalidated strings. A real deployment would resolve these against AD or Okta before calling any tool.
+The tools here are called via Anthropic's native tool-use API (`tools=` in `messages.create`). MCP (Model Context Protocol) is the natural next step:
+
+- **Service discovery** — agent discovers available tools (AD, Intune, ServiceNow connectors) at runtime via the MCP server manifest, without hardcoding schemas in the agent.
+- **Credential isolation** — each connector runs in its own MCP server with scoped service-account credentials, keeping secrets out of the agent process.
+- **Reuse across agents** — the same MCP connector for ServiceNow can be shared by this triage agent, a change-management agent, and an on-call bot without duplicating integration code.
+- **Live KB sync** — an MCP resource server can expose the KB article directory, letting the agent pull the latest doc content at query time rather than from a static embedded index.
+
+</details>
+
+<details>
+<summary><strong>Evaluation metrics for production RAG</strong></summary>
+
+- **MTTR per path** — the primary business metric. Baseline against queue-mediated L1 (4–8 h target). Track separately for SELF_SERVE, AUTO_FIX, and ESCALATE so regressions are path-specific.
+- **Retrieval precision@1** — fraction of queries where the top-ranked KB article is the correct one. Baseline requires a labelled query→article mapping.
+- **Path accuracy** — fraction of queries classified into the correct path (SELF_SERVE / AUTO_FIX / ESCALATE / OUT_OF_SCOPE). Requires a held-out test set with ground-truth labels.
+- **Escalation precision** — fraction of escalated tickets that the receiving technician confirms were correctly escalated (not a false-positive that AUTO_FIX could have handled).
+- **Tool parameter validity** — fraction of AUTO_FIX tool calls that contain only concrete parameter values (no `current.user` placeholders reaching production where actual resolution is required).
+- **False AUTO_FIX rate** — fraction of AUTO_FIX executions that either fail or require a follow-up ticket. Measures how often the agent over-confidently chose to act.
 
 </details>
 
