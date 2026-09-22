@@ -24,12 +24,14 @@ for key, default in [
     ("result", None),
     ("tool_state", None),   # "pending" | "confirmed" | "cancelled"
     ("tool_result", None),
+    ("pending_preset", None),
+    ("use_retrieval", True),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
 
-# ── Callbacks for human-in-the-loop confirmation ────────────────────────────────
+# ── Callbacks ───────────────────────────────────────────────────────────────────
 def _confirm():
     r = st.session_state.result
     st.session_state.tool_result = dispatch(r["tool_name"], r["tool_input"] or {})
@@ -40,11 +42,26 @@ def _cancel():
     st.session_state.tool_state = "cancelled"
 
 
-# ── Path badge (inline HTML) ────────────────────────────────────────────────────
+def _set_preset(q: str):
+    """Queue a preset query; clears previous result so results section re-renders cleanly."""
+    st.session_state.pending_preset = q
+    st.session_state.result = None
+    st.session_state.tool_state = None
+    st.session_state.tool_result = None
+
+
+def _init_tool_state(result: dict):
+    needs = result["tool_name"] is not None and result["path"] in ("AUTO_FIX", "ESCALATE")
+    st.session_state.tool_state = "pending" if needs else None
+    st.session_state.tool_result = None
+
+
+# ── Path badge ──────────────────────────────────────────────────────────────────
 _PATH_COLORS = {
-    "SELF_SERVE": ("#1a7f37", "#dafbe1"),
-    "AUTO_FIX":   ("#0550ae", "#dbeafe"),
-    "ESCALATE":   ("#9a3412", "#fef3c7"),
+    "SELF_SERVE":   ("#1a7f37", "#dafbe1"),
+    "AUTO_FIX":     ("#0550ae", "#dbeafe"),
+    "ESCALATE":     ("#9a3412", "#fef3c7"),
+    "OUT_OF_SCOPE": ("#555555", "#f0f0f0"),
 }
 
 def _badge(path: str) -> str:
@@ -56,30 +73,62 @@ def _badge(path: str) -> str:
     )
 
 
+# ── Presets ─────────────────────────────────────────────────────────────────────
+PRESETS = [
+    "My VPN keeps disconnecting",
+    "Teams shows me as offline to everyone",
+    "I'm locked out of my account",
+    "My OneDrive has been stuck syncing for two days",
+    "My external monitor isn't detected when docked",
+]
+
+
 # ── Header ──────────────────────────────────────────────────────────────────────
 st.title("L1 Support Agent")
 st.caption("Limmatica AG · internal IT triage demo · powered by Claude")
 st.divider()
 
-# ── Input form ──────────────────────────────────────────────────────────────────
+# ── Global RAG toggle ───────────────────────────────────────────────────────────
+st.toggle("Use retrieval (RAG)", key="use_retrieval")
+st.markdown("")
+
+# ── Preset buttons ──────────────────────────────────────────────────────────────
+st.markdown("**Quick examples**")
+cols = st.columns(3)
+for i, preset in enumerate(PRESETS):
+    cols[i % 3].button(
+        preset,
+        key=f"preset_{i}",
+        on_click=_set_preset,
+        args=(preset,),
+        use_container_width=True,
+    )
+
+st.markdown("---")
+
+# ── Free-text form ──────────────────────────────────────────────────────────────
 with st.form("query_form", clear_on_submit=False):
     query = st.text_area(
-        "Describe the issue",
+        "Or describe a custom issue:",
         placeholder="e.g.  My VPN keeps disconnecting since the migration last month",
-        height=110,
+        height=90,
     )
-    col_toggle, col_btn = st.columns([3, 1])
-    with col_toggle:
-        use_retrieval = st.toggle("Use retrieval (RAG)", value=True)
-    with col_btn:
-        submitted = st.form_submit_button("Analyze →", type="primary", use_container_width=True)
+    submitted = st.form_submit_button("Analyze →", type="primary")
+
+# ── Execute triage ──────────────────────────────────────────────────────────────
+if st.session_state.pending_preset:
+    q = st.session_state.pending_preset
+    st.session_state.pending_preset = None
+    with st.spinner(f"Analyzing…"):
+        result = run_triage(q, st.session_state.use_retrieval)
+    st.session_state.result = result
+    _init_tool_state(result)
 
 if submitted and query.strip():
     with st.spinner("Running triage…"):
-        result = run_triage(query.strip(), use_retrieval)
+        result = run_triage(query.strip(), st.session_state.use_retrieval)
     st.session_state.result = result
-    st.session_state.tool_state = "pending" if result["path"] == "AUTO_FIX" else None
-    st.session_state.tool_result = None
+    _init_tool_state(result)
 
 # ── Results ─────────────────────────────────────────────────────────────────────
 if st.session_state.result:
@@ -90,10 +139,7 @@ if st.session_state.result:
     st.subheader("1 · Retrieval")
     if result["retrieved"]:
         r = result["retrieved"]
-        with st.expander(
-            f"**{r['name']}** — similarity {r['score']:.2f}",
-            expanded=False,
-        ):
+        with st.expander(f"**{r['name']}** — similarity {r['score']:.2f}", expanded=False):
             st.markdown(r["content"])
     else:
         if result["use_retrieval"]:
@@ -112,11 +158,13 @@ if st.session_state.result:
 
     # 4 · Action
     st.subheader("4 · Action")
-
     path = result["path"]
 
     if path == "SELF_SERVE":
         st.success("Steps are in the reasoning above — user can action these directly.")
+
+    elif path == "OUT_OF_SCOPE":
+        st.info("Outside IT support scope — no action taken.")
 
     elif path == "ESCALATE":
         st.warning("Escalation required — diagnostic summary is in the reasoning above.")
@@ -134,23 +182,12 @@ if st.session_state.result:
         state = st.session_state.tool_state
 
         if state == "pending":
-            st.markdown(
-                "> **Human-in-the-loop:** this action will not run until you confirm below."
-            )
+            st.markdown("> **Human-in-the-loop:** this action will not run until you confirm.")
             c1, c2, _ = st.columns([2, 2, 3])
             with c1:
-                st.button(
-                    "✓ Confirm — run action",
-                    on_click=_confirm,
-                    type="primary",
-                    use_container_width=True,
-                )
+                st.button("✓ Confirm — run action", on_click=_confirm, type="primary", use_container_width=True)
             with c2:
-                st.button(
-                    "✗ Cancel",
-                    on_click=_cancel,
-                    use_container_width=True,
-                )
+                st.button("✗ Cancel", on_click=_cancel, use_container_width=True)
 
         elif state == "confirmed" and st.session_state.tool_result:
             tr = st.session_state.tool_result
@@ -158,4 +195,4 @@ if st.session_state.result:
             st.caption(f"Timestamp: {tr['timestamp']}")
 
         elif state == "cancelled":
-            st.warning("Action cancelled by operator. No changes made.")
+            st.warning("Action skipped by operator. No changes made.")
