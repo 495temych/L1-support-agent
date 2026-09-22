@@ -1,10 +1,15 @@
 import os
+import sys
+import importlib
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
 import streamlit as st
+# Always reload agent so Streamlit picks up code changes without a server restart.
+import agent as _agent_mod
+importlib.reload(_agent_mod)
 from agent import run_triage
 from tools import dispatch
 
@@ -48,9 +53,13 @@ def _set_preset(q: str):
 
 
 def _init_tool_state(result: dict):
+    import random
     needs = result["tool_name"] is not None and result["path"] in ("AUTO_FIX", "ESCALATE")
     st.session_state.tool_state = "pending" if needs else None
     st.session_state.tool_result = None
+    # Generate a stable preview ticket ID shown before and after confirmation
+    if result["path"] == "ESCALATE":
+        st.session_state.preview_ticket_id = f"INC{random.randint(1000000, 9999999)}"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -130,6 +139,19 @@ with st.form("query_form", clear_on_submit=False):
 if submitted and query.strip():
     with st.spinner("Running triage…"):
         result = run_triage(query.strip(), st.session_state.use_retrieval)
+    # Safety net: if model chose ESCALATE in text but skipped the tool call,
+    # synthesize a minimal ticket so the confirmation card always renders.
+    if result["path"] == "ESCALATE" and result["tool_name"] is None:
+        first_line = next(
+            (l.strip() for l in (result["reasoning"] or "").split("\n") if len(l.strip()) > 15),
+            "Issue escalated — technician review required.",
+        )
+        result["tool_name"] = "create_escalation_ticket"
+        result["tool_input"] = {
+            "queue": "DESKTOP-SUPPORT",
+            "summary": first_line[:150],
+            "priority": "P3-Normal",
+        }
     st.session_state.result = result
     _init_tool_state(result)
 
@@ -219,44 +241,54 @@ if st.session_state.result:
 
     elif path == "ESCALATE":
         if result["tool_name"] == "create_escalation_ticket":
-            ti       = result["tool_input"] or {}
-            queue    = ti.get("queue", "DESKTOP-SUPPORT")
-            summary  = ti.get("summary", "—")
-            priority = ti.get("priority", "P3-Normal")
-
-            # Ticket card
-            with st.container(border=True):
-                st.markdown("**Proposed escalation ticket**")
-                st.markdown(f"Queue: `{queue}`")
-                st.markdown(f"Summary for technician: {summary}")
-                st.markdown(f"Priority: `{priority}`")
+            ti        = result["tool_input"] or {}
+            queue     = ti.get("queue", "DESKTOP-SUPPORT")
+            summary   = ti.get("summary", "—")
+            priority  = ti.get("priority", "P3-Normal")
+            ticket_id = st.session_state.get("preview_ticket_id", "INC0000000")
 
             state = st.session_state.tool_state
 
-            if state == "pending":
+            if state in ("pending", None):
+                # ── Draft ticket preview (ITSM-style) ────────────────────────
+                with st.container(border=True):
+                    st.markdown("**Draft ServiceNow incident — pending confirmation**")
+                    st.markdown("")
+                    col_l, col_r = st.columns(2)
+                    with col_l:
+                        st.markdown(f"**Ticket ID**\n\n`{ticket_id}`")
+                        st.markdown(f"**Assignment group**\n\n`{queue}`")
+                        st.markdown(f"**Priority**\n\n`{priority}`")
+                    with col_r:
+                        st.markdown("**Requested by**\n\n`current.user`")
+                        st.markdown("**Category**\n\nIT Support / Endpoint")
+                        st.markdown(f"**Short description**\n\n{summary}")
+
                 _pending_callout(
-                    f"This will open a ticket in <strong>{queue}</strong> "
+                    f"Confirm to submit this ticket to <strong>{queue}</strong> "
                     f"and notify the on-call technician."
                 )
                 c1, c2, _ = st.columns([2, 2, 3])
                 with c1:
-                    st.button("✓ Confirm — create ticket", on_click=_confirm,
+                    st.button("✓ Confirm — submit ticket", on_click=_confirm,
                               type="primary", use_container_width=True)
                 with c2:
                     st.button("✗ Cancel", on_click=_cancel, use_container_width=True)
 
             elif state == "confirmed" and st.session_state.tool_result:
-                tr     = st.session_state.tool_result
-                ticket = tr.get("ticket_number", "INC?")
-                st.success(f"**Ticket #{ticket} created (simulated)**\n\n{tr['detail']}")
+                tr = st.session_state.tool_result
+                st.success(
+                    f"**Ticket {ticket_id} submitted (simulated)**\n\n"
+                    f"Redirecting to ServiceNow... *(simulated)*\n\n"
+                    f"On-call technician for `{queue}` notified. SLA clock started."
+                )
                 st.caption(f"Timestamp: {tr['timestamp']}")
 
             elif state == "cancelled":
-                st.warning("Escalation skipped by operator. No ticket created.")
+                st.warning("Escalation skipped by user. No ticket created.")
 
         else:
             # Fallback: agent chose ESCALATE but didn't call the ticket tool.
-            # After the prompt fix this shouldn't occur, but handle gracefully.
             st.warning(
                 "The agent recommends escalation but did not propose a specific ticket. "
                 "Review the reasoning above and raise a ticket manually if needed."

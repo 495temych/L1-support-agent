@@ -214,17 +214,38 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
     tool_name = None
     tool_input = None
 
+    # Text blocks set path via keyword scan; tool_use blocks always win (processed last).
     for block in response.content:
         if block.type == "text":
             reasoning = block.text
-            for candidate in ("OUT_OF_SCOPE", "SELF_SERVE", "AUTO_FIX", "ESCALATE"):
-                if candidate in block.text:
-                    path = candidate
-                    break
+            if tool_name is None:  # don't let text override a tool-use decision
+                # Use the LAST occurrence of any path keyword — the agent's final
+                # "Path chosen: X" sentence wins over earlier mentions in reasoning.
+                last_pos, chosen = -1, None
+                for candidate in ("OUT_OF_SCOPE", "SELF_SERVE", "AUTO_FIX", "ESCALATE"):
+                    pos = block.text.rfind(candidate)
+                    if pos > last_pos:
+                        last_pos, chosen = pos, candidate
+                if chosen:
+                    path = chosen
         elif block.type == "tool_use":
             tool_name = block.name
             tool_input = block.input
             path = "ESCALATE" if block.name == "create_escalation_ticket" else "AUTO_FIX"
+
+    # Safety net: model chose ESCALATE in text but didn't call the tool.
+    # Synthesize a minimal ticket so the UI can always show the confirmation card.
+    if path == "ESCALATE" and tool_name is None:
+        tool_name = "create_escalation_ticket"
+        first_line = next(
+            (l.strip() for l in (reasoning or "").split("\n") if len(l.strip()) > 15),
+            "Issue escalated — technician review required.",
+        )
+        tool_input = {
+            "queue": "DESKTOP-SUPPORT",
+            "summary": first_line[:150],
+            "priority": "P3-Normal",
+        }
 
     return {
         "retrieved": retrieved,
