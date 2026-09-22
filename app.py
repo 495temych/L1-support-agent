@@ -24,7 +24,7 @@ for key, default in [
     ("result", None),
     ("tool_state", None),   # "pending" | "confirmed" | "cancelled"
     ("tool_result", None),
-    ("pending_preset", None),
+    ("query_text", ""),
     ("use_retrieval", True),
 ]:
     if key not in st.session_state:
@@ -43,10 +43,8 @@ def _cancel():
 
 
 def _set_preset(q: str):
-    st.session_state.pending_preset = q
-    st.session_state.result = None
-    st.session_state.tool_state = None
-    st.session_state.tool_result = None
+    """Populate the text field with the preset query; user still clicks Analyze."""
+    st.session_state.query_text = q
 
 
 def _init_tool_state(result: dict):
@@ -122,20 +120,13 @@ st.markdown("---")
 with st.form("query_form", clear_on_submit=False):
     query = st.text_area(
         "Or describe a custom issue:",
+        value=st.session_state.query_text,
         placeholder="e.g.  My VPN keeps disconnecting since the migration last month",
         height=90,
     )
     submitted = st.form_submit_button("Analyze →", type="primary")
 
 # ── Execute triage ──────────────────────────────────────────────────────────────
-if st.session_state.pending_preset:
-    q = st.session_state.pending_preset
-    st.session_state.pending_preset = None
-    with st.spinner("Analyzing…"):
-        result = run_triage(q, st.session_state.use_retrieval)
-    st.session_state.result = result
-    _init_tool_state(result)
-
 if submitted and query.strip():
     with st.spinner("Running triage…"):
         result = run_triage(query.strip(), st.session_state.use_retrieval)
