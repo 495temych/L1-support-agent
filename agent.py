@@ -20,7 +20,7 @@ TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "AD username (e.g. jsmith)"},
+                "username": {"type": "string", "description": "AD username; use 'current.user' if not stated in the query"},
             },
             "required": ["username"],
         },
@@ -53,7 +53,7 @@ TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "AD username"},
+                "username": {"type": "string", "description": "AD username; use 'current.user' if not stated in the query"},
             },
             "required": ["username"],
         },
@@ -68,7 +68,7 @@ TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "AD username"},
+                "username": {"type": "string", "description": "AD username; use 'current.user' if not stated in the query"},
             },
             "required": ["username"],
         },
@@ -85,7 +85,7 @@ TOOLS: list[dict] = [
             "properties": {
                 "device_id": {
                     "type": "string",
-                    "description": "Intune device ID or hostname",
+                    "description": "Intune device ID or hostname; use 'current.device' if not stated in the query",
                 },
             },
             "required": ["device_id"],
@@ -101,7 +101,7 @@ TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "AD username"},
+                "username": {"type": "string", "description": "AD username; use 'current.user' if not stated in the query"},
                 "department": {
                     "type": "string",
                     "description": "User's department (e.g. Finance, Legal)",
@@ -121,7 +121,7 @@ TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "AD username to unlock"},
+                "username": {"type": "string", "description": "AD username to unlock; use 'current.user' if not stated in the query"},
             },
             "required": ["username"],
         },
@@ -136,7 +136,7 @@ TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "AD username"},
+                "username": {"type": "string", "description": "AD username; use 'current.user' if not stated in the query"},
             },
             "required": ["username"],
         },
