@@ -142,6 +142,23 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "push_approved_software",
+        "description": (
+            "Push a Company Portal approved software title to a user's device via Intune "
+            "'Required' assignment. Use when the software is confirmed to be in the approved "
+            "catalog (KB-0112) and the user cannot install via the portal UI. "
+            "Install completes within ~15 min on next policy sync."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "username": {"type": "string", "description": "AD username; use 'current.user' if not stated in the query"},
+                "software_name": {"type": "string", "description": "Exact software name from Company Portal catalog (e.g. 'Zoom', 'Visual Studio Code')"},
+            },
+            "required": ["username", "software_name"],
+        },
+    },
+    {
         "name": "create_escalation_ticket",
         "description": (
             "Open a ServiceNow escalation ticket when the issue cannot be resolved at the "

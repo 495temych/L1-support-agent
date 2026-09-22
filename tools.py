@@ -75,6 +75,14 @@ def enable_onedrive_files_on_demand(username: str) -> dict:
     )
 
 
+def push_approved_software(username: str, software_name: str) -> dict:
+    return _ok(
+        "push_approved_software",
+        f"Intune 'Required' assignment created: {software_name} → {username}'s device. "
+        "Install will trigger within 15 min on next policy sync. Logged in Intune under device compliance.",
+    )
+
+
 def create_escalation_ticket(
     queue: str, summary: str, priority: str = "P3-Normal"
 ) -> dict:
@@ -100,6 +108,7 @@ REGISTRY: dict[str, callable] = {
     "remap_drives": remap_drives,
     "unlock_ad_account": unlock_ad_account,
     "enable_onedrive_files_on_demand": enable_onedrive_files_on_demand,
+    "push_approved_software": push_approved_software,
     "create_escalation_ticket": create_escalation_ticket,
 }
 

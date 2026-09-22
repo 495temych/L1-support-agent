@@ -102,11 +102,17 @@ def _pending_callout(label: str) -> None:
 
 # ── Presets ─────────────────────────────────────────────────────────────────────
 PRESETS = [
+    # AUTO_FIX demos
     "My VPN keeps disconnecting",
     "Teams shows me as offline to everyone",
+    "Floor 5 print queue is stuck, several people can't print",
+    "My VPN cert error persists, I've confirmed the gateway is correct and I was offline for a month",
+    "I need Zoom installed but I don't have admin rights — it's listed in Company Portal",
+    # ESCALATE demos
     "I'm locked out of my account",
     "My OneDrive has been stuck syncing for two days",
     "My external monitor isn't detected when docked",
+    # OUT_OF_SCOPE demo
     "What's the weather like today?",
 ]
 
