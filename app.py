@@ -167,7 +167,37 @@ if st.session_state.result:
         st.info("Outside IT support scope — no action taken.")
 
     elif path == "ESCALATE":
-        st.warning("Escalation required — diagnostic summary is in the reasoning above.")
+        if result["tool_name"] == "create_escalation_ticket":
+            ti = result["tool_input"] or {}
+            queue    = ti.get("queue", "unknown")
+            summary  = ti.get("summary", "—")
+            priority = ti.get("priority", "P3-Normal")
+
+            with st.container(border=True):
+                st.markdown(f"**Queue:** `{queue}`")
+                st.markdown(f"**Summary for technician:** {summary}")
+                st.markdown(f"**Priority:** {priority}")
+
+            state = st.session_state.tool_state
+
+            if state == "pending":
+                st.markdown("> **Human-in-the-loop:** this will open a ticket and notify a technician.")
+                c1, c2, _ = st.columns([2, 2, 3])
+                with c1:
+                    st.button("✓ Confirm — create ticket", on_click=_confirm, type="primary", use_container_width=True)
+                with c2:
+                    st.button("✗ Cancel", on_click=_cancel, use_container_width=True)
+
+            elif state == "confirmed" and st.session_state.tool_result:
+                tr = st.session_state.tool_result
+                ticket = tr.get("ticket_number", "INC?")
+                st.success(f"**Ticket #{ticket} created (simulated)**\n\n{tr['detail']}")
+                st.caption(f"Timestamp: {tr['timestamp']}")
+
+            elif state == "cancelled":
+                st.warning("Escalation skipped by operator. No ticket created.")
+        else:
+            st.warning("Escalation required — diagnostic summary is in the reasoning above.")
 
     elif path == "AUTO_FIX":
         tool_name = result["tool_name"] or "unknown"

@@ -75,6 +75,22 @@ def enable_onedrive_files_on_demand(username: str) -> dict:
     )
 
 
+def create_escalation_ticket(
+    queue: str, summary: str, priority: str = "P3-Normal"
+) -> dict:
+    import random
+    ticket_num = f"INC{random.randint(1000000, 9999999)}"
+    result = _ok(
+        "create_escalation_ticket",
+        f"Ticket #{ticket_num} opened in {queue} (priority: {priority}). "
+        f"On-call technician notified. SLA clock started.",
+    )
+    result["ticket_number"] = ticket_num
+    result["queue"] = queue
+    result["priority"] = priority
+    return result
+
+
 REGISTRY: dict[str, callable] = {
     "reset_vpn_profile": reset_vpn_profile,
     "restart_print_spooler": restart_print_spooler,
@@ -84,6 +100,7 @@ REGISTRY: dict[str, callable] = {
     "remap_drives": remap_drives,
     "unlock_ad_account": unlock_ad_account,
     "enable_onedrive_files_on_demand": enable_onedrive_files_on_demand,
+    "create_escalation_ticket": create_escalation_ticket,
 }
 
 

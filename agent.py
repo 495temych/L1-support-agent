@@ -141,6 +141,38 @@ TOOLS: list[dict] = [
             "required": ["username"],
         },
     },
+    {
+        "name": "create_escalation_ticket",
+        "description": (
+            "Open a ServiceNow escalation ticket when the issue cannot be resolved at the "
+            "desktop support level. Call this whenever the ESCALATE path is chosen — "
+            "it captures the queue, diagnostic summary, and priority so the receiving "
+            "technician has the context they need."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "queue": {
+                    "type": "string",
+                    "description": (
+                        "ServiceNow queue to route to (e.g. NET-VPN, M365-PROFILE, "
+                        "SEC-INCIDENT, INFRA-FS01, NET-PRINT, M365-SYNC, HW-REPLACE, "
+                        "DESKTOP-URGENT, M365-TENANT, NET-WIFI)"
+                    ),
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "One-sentence diagnostic summary for the receiving technician",
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["P3-Normal", "P2-High", "P1-Critical"],
+                    "description": "Ticket priority based on business impact and urgency",
+                },
+            },
+            "required": ["queue", "summary"],
+        },
+    },
 ]
 
 
@@ -192,7 +224,7 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
         elif block.type == "tool_use":
             tool_name = block.name
             tool_input = block.input
-            path = "AUTO_FIX"
+            path = "ESCALATE" if block.name == "create_escalation_ticket" else "AUTO_FIX"
 
     return {
         "retrieved": retrieved,
