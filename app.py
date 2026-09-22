@@ -153,6 +153,21 @@ if st.session_state.result:
         r = result["retrieved"]
         with st.expander(f"**{r['name']}** — similarity {r['score']:.2f}", expanded=False):
             st.markdown(r["content"])
+
+        highlights = r.get("highlights", [])
+        if highlights:
+            st.markdown("**Why this document matched — top passages:**")
+            for h in highlights:
+                # Strip markdown characters for clean plain-text display in the highlight strip
+                clean = h["text"].replace("**", "").replace("`", "").replace("*", "")
+                st.markdown(
+                    f'<div style="background:#fffbeb;border-left:3px solid #f59e0b;'
+                    f'padding:5px 10px;margin:3px 0;font-size:0.88em;line-height:1.4;">'
+                    f'<code style="color:#92400e;font-size:0.82em;background:none">'
+                    f'{h["score"]:.2f}</code>'
+                    f'&ensp;{clean}</div>',
+                    unsafe_allow_html=True,
+                )
     else:
         if result["use_retrieval"]:
             st.info("No KB article matched above the confidence threshold.")
