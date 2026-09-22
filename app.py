@@ -43,7 +43,6 @@ def _cancel():
 
 
 def _set_preset(q: str):
-    """Queue a preset query; clears previous result so results section re-renders cleanly."""
     st.session_state.pending_preset = q
     st.session_state.result = None
     st.session_state.tool_state = None
@@ -56,7 +55,7 @@ def _init_tool_state(result: dict):
     st.session_state.tool_result = None
 
 
-# ── Path badge ──────────────────────────────────────────────────────────────────
+# ── Helpers ─────────────────────────────────────────────────────────────────────
 _PATH_COLORS = {
     "SELF_SERVE":   ("#1a7f37", "#dafbe1"),
     "AUTO_FIX":     ("#0550ae", "#dbeafe"),
@@ -70,6 +69,18 @@ def _badge(path: str) -> str:
         f'<span style="background:{bg};color:{fg};border:1px solid {fg}33;'
         f'padding:4px 12px;border-radius:5px;font-weight:700;'
         f'font-size:0.95em;letter-spacing:0.03em">{path}</span>'
+    )
+
+
+def _pending_callout(label: str) -> None:
+    """Renders the 'awaiting confirmation' banner above Confirm/Cancel buttons."""
+    st.markdown(
+        f'<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;'
+        f'padding:10px 14px;margin:10px 0 8px 0;">'
+        f'<strong>&#9888;&#65039; Human-in-the-loop — awaiting your decision</strong><br/>'
+        f'<span style="font-size:0.9em">{label}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
     )
 
 
@@ -120,7 +131,7 @@ with st.form("query_form", clear_on_submit=False):
 if st.session_state.pending_preset:
     q = st.session_state.pending_preset
     st.session_state.pending_preset = None
-    with st.spinner(f"Analyzing…"):
+    with st.spinner("Analyzing…"):
         result = run_triage(q, st.session_state.use_retrieval)
     st.session_state.result = result
     _init_tool_state(result)
@@ -161,51 +172,22 @@ if st.session_state.result:
     st.subheader("4 · Action")
     path = result["path"]
 
+    # ── Non-interactive paths ────────────────────────────────────────────────
     if path == "SELF_SERVE":
-        st.success("Steps are in the reasoning above — user can action these directly.")
+        st.success("Steps are in the reasoning above — no operator action required.")
 
     elif path == "OUT_OF_SCOPE":
-        st.info("Outside IT support scope — no triage action taken.")
+        st.info("Outside IT support scope — no action taken.")
 
-    elif path == "ESCALATE":
-        if result["tool_name"] == "create_escalation_ticket":
-            ti = result["tool_input"] or {}
-            queue    = ti.get("queue", "unknown")
-            summary  = ti.get("summary", "—")
-            priority = ti.get("priority", "P3-Normal")
-
-            with st.container(border=True):
-                st.markdown(f"**Queue:** `{queue}`")
-                st.markdown(f"**Summary for technician:** {summary}")
-                st.markdown(f"**Priority:** {priority}")
-
-            state = st.session_state.tool_state
-
-            if state == "pending":
-                st.markdown("> **Human-in-the-loop:** this will open a ticket and notify a technician.")
-                c1, c2, _ = st.columns([2, 2, 3])
-                with c1:
-                    st.button("✓ Confirm — create ticket", on_click=_confirm, type="primary", use_container_width=True)
-                with c2:
-                    st.button("✗ Cancel", on_click=_cancel, use_container_width=True)
-
-            elif state == "confirmed" and st.session_state.tool_result:
-                tr = st.session_state.tool_result
-                ticket = tr.get("ticket_number", "INC?")
-                st.success(f"**Ticket #{ticket} created (simulated)**\n\n{tr['detail']}")
-                st.caption(f"Timestamp: {tr['timestamp']}")
-
-            elif state == "cancelled":
-                st.warning("Escalation skipped by operator. No ticket created.")
-        else:
-            st.warning("Escalation required — diagnostic summary is in the reasoning above.")
-
+    # ── Interactive paths (both require operator confirmation) ───────────────
     elif path == "AUTO_FIX":
-        tool_name = result["tool_name"] or "unknown"
+        tool_name  = result["tool_name"] or "unknown"
         tool_input = result["tool_input"] or {}
 
+        # Action card
         with st.container(border=True):
-            st.markdown(f"**Tool:** `{tool_name}`")
+            st.markdown("**Proposed automated fix**")
+            st.markdown(f"Tool: `{tool_name}`")
             if tool_input:
                 for k, v in tool_input.items():
                     st.markdown(f"- `{k}`: `{v}`")
@@ -213,17 +195,63 @@ if st.session_state.result:
         state = st.session_state.tool_state
 
         if state == "pending":
-            st.markdown("> **Human-in-the-loop:** this action will not run until you confirm.")
+            _pending_callout("This fix will not run until you confirm below.")
             c1, c2, _ = st.columns([2, 2, 3])
             with c1:
-                st.button("✓ Confirm — run action", on_click=_confirm, type="primary", use_container_width=True)
+                st.button("✓ Confirm — run action", on_click=_confirm,
+                          type="primary", use_container_width=True)
             with c2:
                 st.button("✗ Cancel", on_click=_cancel, use_container_width=True)
 
         elif state == "confirmed" and st.session_state.tool_result:
             tr = st.session_state.tool_result
-            st.success(f"**Action executed (simulated)**\n\n{tr['detail']}")
+            st.success(f"**Action taken (simulated)**\n\n{tr['detail']}")
             st.caption(f"Timestamp: {tr['timestamp']}")
 
         elif state == "cancelled":
             st.warning("Action skipped by operator. No changes made.")
+
+    elif path == "ESCALATE":
+        if result["tool_name"] == "create_escalation_ticket":
+            ti       = result["tool_input"] or {}
+            queue    = ti.get("queue", "DESKTOP-SUPPORT")
+            summary  = ti.get("summary", "—")
+            priority = ti.get("priority", "P3-Normal")
+
+            # Ticket card
+            with st.container(border=True):
+                st.markdown("**Proposed escalation ticket**")
+                st.markdown(f"Queue: `{queue}`")
+                st.markdown(f"Summary for technician: {summary}")
+                st.markdown(f"Priority: `{priority}`")
+
+            state = st.session_state.tool_state
+
+            if state == "pending":
+                _pending_callout(
+                    f"This will open a ticket in <strong>{queue}</strong> "
+                    f"and notify the on-call technician."
+                )
+                c1, c2, _ = st.columns([2, 2, 3])
+                with c1:
+                    st.button("✓ Confirm — create ticket", on_click=_confirm,
+                              type="primary", use_container_width=True)
+                with c2:
+                    st.button("✗ Cancel", on_click=_cancel, use_container_width=True)
+
+            elif state == "confirmed" and st.session_state.tool_result:
+                tr     = st.session_state.tool_result
+                ticket = tr.get("ticket_number", "INC?")
+                st.success(f"**Ticket #{ticket} created (simulated)**\n\n{tr['detail']}")
+                st.caption(f"Timestamp: {tr['timestamp']}")
+
+            elif state == "cancelled":
+                st.warning("Escalation skipped by operator. No ticket created.")
+
+        else:
+            # Fallback: agent chose ESCALATE but didn't call the ticket tool.
+            # After the prompt fix this shouldn't occur, but handle gracefully.
+            st.warning(
+                "The agent recommends escalation but did not propose a specific ticket. "
+                "Review the reasoning above and raise a ticket manually if needed."
+            )
