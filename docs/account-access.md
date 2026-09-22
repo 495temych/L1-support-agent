@@ -1,15 +1,20 @@
 <!-- docs/account-access.md -->
-# Account Lockout / Password Reset
+# KB-0067 — Account Lockout / Password Reset
 
-**Applies to:** Active Directory, account lockout, password reset, MFA
+**Category:** Identity | **Owner team:** Security Ops | **Last updated:** 2026-08-01 by M. Rohner
 
-**Reported symptoms:** "Account locked" message after failed sign-in attempts, or a forgotten password blocking access on all devices.
+**Environment:** Active Directory domain `LIMMATICA`, synced to Okta for M365/SaaS SSO. Lockout policy per `SEC-04` (rev. March 2026): 5 failed attempts within 15 min → lockout, auto-unlocks after 30 min or manual unlock.
 
-**Known causes on record:**
-- Standard lockout after repeated failed logins
-- Expired password under rotation policy
+**Recurring pattern:** Lockouts spike every Monday morning (password rotation reminders sent Friday, many users forget over the weekend) — not a security concern on its own, just seasonal ticket volume.
+
+**Confirmed causes:**
+- Standard lockout after failed attempts (majority of tickets, especially Mondays — see above)
+- Password expired under 90-day rotation policy, user unaware
 - Genuinely forgotten credentials
 
-**Standard checks:** identity verification (security question or MFA), lockout timestamp and failed-attempt count on the account.
+**Verified resolution steps:**
+1. Verify identity via Okta Verify push (security questions deprecated org-wide since Feb 2026, do not use)
+2. Check lockout timestamp + failed-attempt count in AD Admin Center — confirms it's a standard lockout, not something else
+3. Unlock via `Unlock-ADAccount -Identity <username>` (Desktop Support has this delegated permission) or direct user to self-service reset at `reset.limmatica.corp`
 
-**Notes:** A single lockout is routine. Multiple lockouts within a short window on the same account should be treated as a possible compromise, not a routine reset.
+**Escalation:** 2+ lockouts within 24 hours on the same account is treated as a possible compromise indicator per `SEC-04` §4.2 — do NOT perform a routine unlock, escalate immediately to `SEC-INCIDENT` for review before any account action.

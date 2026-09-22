@@ -1,15 +1,20 @@
 <!-- docs/printer.md -->
-# Printer — Offline / Stuck Print Queue
+# KB-0089 — Printer: bizhub Fleet Offline / Stuck Queue
 
-**Applies to:** Printers, print spooler, network printers
+**Category:** Peripherals | **Owner team:** Desktop Support | **Last updated:** 2026-07-02 by T. Iten
 
-**Reported symptoms:** Printer shows "offline" in Devices & Printers, or jobs sit in the queue without printing.
+**Environment:** Limmatica AG print fleet is Konica Minolta bizhub C4051i, managed via PaperCut MF. Print server: `PRINT01.limmatica.corp`.
 
-**Known causes on record:**
-- Print spooler service hung or crashed
-- Driver mismatch after a Windows update
-- Printer physically powered off or dropped from network
+**Recurring pattern:** Spooler service (`spoolsv.exe`) hangs after the nightly PaperCut sync job (runs 02:00 CET) roughly 2x/month, affecting all users on a given floor's print queue simultaneously — this is the key signal distinguishing a spooler issue from a single dead print job.
 
-**Standard checks:** printer power/network status, queue contents, spooler service status (Services > Print Spooler).
+**Confirmed causes:**
+- Spooler hung post-sync (floor-wide pattern — see above)
+- Single stuck job with corrupted print data (isolated to one user)
+- Driver mismatch after the 2026-05 Windows Universal Print rollout — legacy KM driver conflicts with UP driver on some ThinkPads
 
-**Notes:** If the queue clears but the issue recurs daily, it's usually a driver problem, not a one-off.
+**Verified resolution steps:**
+1. Check if issue is floor-wide (Teams channel #it-floor-status) or single-user — determines which path below applies
+2. Floor-wide: restart Print Spooler service on `PRINT01` (Desktop Support has remote access) — do NOT ask user to restart locally, this won't fix a server-side hang
+3. Single-user: clear local queue via `services.msc` > Print Spooler > restart, then re-add printer via PaperCut portal `print.limmatica.corp`
+
+**Escalation:** If floor-wide and spooler restart doesn't clear it within 15 min, escalate to `NET-PRINT` — possible PaperCut sync job failure requiring vendor support ticket.

@@ -1,14 +1,20 @@
 <!-- docs/wifi.md -->
-# Wi-Fi — Drops on a Specific Network
+# KB-0156 — Wi-Fi: Drops on LIMMATICA-CORP SSID
 
-**Applies to:** Wi-Fi, wireless adapter, network connectivity
+**Category:** Network | **Owner team:** Network Ops | **Last updated:** 2026-06-30 by M. Rohner
 
-**Reported symptoms:** Repeated disconnects on the corporate SSID specifically, while other networks (e.g. mobile hotspot) remain stable.
+**Environment:** Corporate SSID `LIMMATICA-CORP` (WPA2-Enterprise, Aruba APs, floors 3-7 of Sihlquai office). Guest network `LIMMATICA-GUEST` is separate infrastructure and unaffected by these issues.
 
-**Known causes on record:**
-- Outdated or corrupted network adapter driver (device-side)
-- Access point congestion or channel interference (infrastructure-side)
+**Recurring pattern:** Floor 5 has a known AP congestion issue near the open-plan area (>40 concurrent devices on one Aruba AP-515) — logged as a known limitation pending Q4 2026 AP density upgrade, not a per-ticket fixable issue.
 
-**Standard checks:** whether the issue affects one device or several users on the same access point, adapter driver version, signal strength relative to the nearest AP.
+**Confirmed causes:**
+- Outdated Intel Wi-Fi driver on ThinkPad T14 fleet (pre-2026-05 image) — device-side
+- Floor 5 AP congestion (infrastructure-side, see above)
+- Certificate-based auth (EAP-TLS) failure after device re-image — device drops off silently
 
-**Notes:** A single affected device usually points to the driver. Multiple users on the same AP reporting the same issue points to infrastructure — different fix path entirely.
+**Verified resolution steps:**
+1. Ask: is this one device or has it been reported by multiple people on the same floor? Determines path.
+2. Single device: check driver version via Device Manager, update via Intune if pre-2026-05
+3. Floor 5, multiple users: this is the known congestion issue — log ticket for tracking but do not spend time troubleshooting client-side, reference `NET-WIFI-FLOOR5-KNOWN`
+
+**Escalation:** New pattern (not floor 5, not driver-related) → escalate to `NET-WIFI` for AP-side log review.
