@@ -61,6 +61,21 @@ def _cancel():
     st.session_state.tool_state = "cancelled"
 
 
+def _escalate_self_serve():
+    """Convert a displayed SELF_SERVE result into an ESCALATE ticket-preview flow,
+    reusing create_escalation_ticket — no new tool or UI path."""
+    r = st.session_state.result
+    summary = f"Self-serve steps did not resolve the issue. Original query: {r.get('query', '')}"
+    r["path"] = "ESCALATE"
+    r["tool_name"] = "create_escalation_ticket"
+    r["tool_input"] = {
+        "queue": "DESKTOP-SUPPORT",
+        "summary": summary[:150],
+        "priority": "P3-Normal",
+    }
+    _init_tool_state(r)
+
+
 def _set_preset(q: str):
     """Populate the text field with the preset query; user still clicks Analyze."""
     st.session_state.query_text = q
@@ -229,6 +244,10 @@ if st.session_state.result:
     # ── Non-interactive paths ────────────────────────────────────────────────
     if path == "SELF_SERVE":
         st.success("Steps are in the reasoning above — no operator action required.")
+        st.button(
+            "This didn't resolve it — escalate to a technician.",
+            on_click=_escalate_self_serve,
+        )
 
     elif path == "OUT_OF_SCOPE":
         st.info("Outside IT support scope — no action taken.")

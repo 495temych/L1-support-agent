@@ -62,10 +62,12 @@ flowchart LR
 
 | Path | When | Operator action required? |
 |---|---|---|
-| **SELF_SERVE** | Fix is documented, safe, and user-executable | No — steps returned directly |
+| **SELF_SERVE** | Fix is documented, safe, and user-executable | No — steps returned directly; "didn't resolve it" button escalates (see below) |
 | **AUTO_FIX** | Fix is documented, reversible, better run by the agent | Yes — Confirm or Cancel before tool runs |
 | **ESCALATE** | Info missing, infra-side issue, or low confidence | Yes — Confirm or Cancel before ticket is created |
 | **OUT_OF_SCOPE** | Not an IT support request | No — declined immediately |
+
+**SELF_SERVE fallback:** if the returned steps don't fix it, a button on the result ("This didn't resolve it — escalate to a technician") converts the result in place into the same ESCALATE ticket-preview/Confirm/Cancel flow — reusing `create_escalation_ticket` rather than adding a new tool. The generated summary explicitly notes self-serve was already attempted, so the receiving technician doesn't repeat those steps; queue defaults to `DESKTOP-SUPPORT`, priority `P3-Normal`.
 
 ---
 

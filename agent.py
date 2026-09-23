@@ -242,6 +242,7 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
             "reasoning": reasoning,
             "tool_name": None,
             "tool_input": None,
+            "query": query,
         }
 
     path = "ESCALATE"
@@ -289,4 +290,5 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
         "reasoning": reasoning,
         "tool_name": tool_name,
         "tool_input": tool_input,
+        "query": query,
     }
