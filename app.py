@@ -26,6 +26,7 @@ if "modules_reloaded" not in st.session_state:
 # agent: cheap to reload on every run (picks up prompt/tool schema changes instantly).
 importlib.reload(_agent_mod)
 from agent import run_triage
+import eval as _eval_mod
 
 st.set_page_config(
     page_title="L1 Support Agent — Limmatica AG",
@@ -79,6 +80,13 @@ def _escalate_self_serve():
 def _set_preset(q: str):
     """Populate the text field with the preset query; user still clicks Analyze."""
     st.session_state.query_text = q
+
+
+@st.cache_data(show_spinner="Running golden-set evaluation…")
+def _run_eval_cached():
+    """Runs eval.py's golden set once (cached across reruns) — not per query."""
+    rows = _eval_mod.run_eval()
+    return rows, _eval_mod.summarize(rows)
 
 
 def _init_tool_state(result: dict):
@@ -353,3 +361,36 @@ if st.session_state.result:
                 "The agent recommends escalation but did not propose a specific ticket. "
                 "Review the reasoning above and raise a ticket manually if needed."
             )
+
+# ── Evaluation ──────────────────────────────────────────────────────────────────
+st.divider()
+with st.expander("🧪 Evaluation — golden-set results", expanded=False):
+    eval_rows, eval_summary = _run_eval_cached()
+    st.caption(
+        f"{eval_summary['n']} hand-labeled queries — a regression check on this KB "
+        f"and prompt, not an external benchmark. Run standalone: `python eval.py`."
+    )
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Retrieval accuracy", f"{eval_summary['retrieval_accuracy']:.0%}")
+    m2.metric("Precision@2", f"{eval_summary['precision_at_2']:.0%}")
+    m3.metric("Recall@2", f"{eval_summary['recall_at_2']:.0%}")
+    m4.metric("Path accuracy", f"{eval_summary['path_accuracy']:.0%}")
+
+    st.dataframe(
+        [
+            {
+                "Query": r["query"],
+                "Expected units": ", ".join(sorted(r["expected_units"])) or "(none)",
+                "Retrieved units": ", ".join(r["retrieved_units"]) or "(none)",
+                "Top-1": "✓" if r["top1_correct"] else "✗",
+                "P@2": f'{r["precision_at_2"]:.2f}',
+                "R@2": f'{r["recall_at_2"]:.2f}',
+                "Expected path": "/".join(sorted(r["expected_path"])),
+                "Actual path": r["actual_path"],
+                "Path": "✓" if r["path_correct"] else "✗",
+            }
+            for r in eval_rows
+        ],
+        width="stretch",
+        hide_index=True,
+    )
