@@ -1,27 +1,54 @@
 # TriagePilot — L1 IT Support Agent
 
-## Business Case
+### Problem
+
+Most L1 tickets aren't hard — they're just troubleshooting simple, repetitive tasks. Routine issues (software download and personalization, OS configuration, workplace setup, etc.) sit in a queue until a technician becomes available, identifies the pattern, looks up the procedure, and acts. The fix is rarely novel; the dispatch delay is the struggle.
+
+In the Swiss-german region, that delay is expensive on both ends: skilled IT hours are costly, and skilled IT capacity is structurally scarce — so time a technician spends pattern-matching a known issue is time not spent on the complex work only they can do. **TriagePilot targets exactly that slice: high-frequency, well-documented, low-novelty tickets.**
+
+### Stakeholder Profiles Breakdown
+
+| Stakeholder | Job-to-be-Done | Pain | Gain — Basic | Gain — Surprising | Target metric |
+|---|---|---|---|---|---|
+| **Employees** | Get back to work with minimal disruption | Long wait for trivial issues; repeating context to technicians | Faster resolution for well-documented issues | Explainable, grounded self-serve guides for basic IT issues; generating a service ticket based on their issue automatically | Mostly qualitative, but IT issues influence productivity|
+| **L1 Technicians** | Triage & resolve routine tickets, escalate the rest with context | Repetitive pattern-matching, repetitive work; unclear user requests | Fewer routine tickets to resolve manually | AUTO_FIX shifts burden from diagnosis to confirmation; escalation write-ups auto-generated | **Yes** — 20 tickets/day × 10 min × 30–70% automation → 1.0–2.3 h/day recovered → **CHF 13k–31k/year/technician** (CHF 60/h, 220 days) |
+| **L2/L3 Specialists** | Resolve complex issues without re-diagnosing from scratch | Escalations under-documented; quality varies by which L1 technician handled it | Escalations arrive with diagnostic summary + retrieval trace | Consistent format regardless of which technician escalated | Time-to-first-action or MTTR |
+| **CTO** | Keep cost-per-ticket low, maintain SLA & audit compliance | Cost-per-ticket opaque; no per-category automation visibility; audit risk on unlogged fixes | Lower cost-per-ticket; automation-rate reporting by category | Confirmation log doubles as compliance/audit evidence | Cost-per-ticket by category; SLA compliance rate |
+
+### Economic potential:
+
+At 5 tickets/day × 45 min avg, a technician spends ~3.75 h/day on pattern-matching and troubleshooting work. Automating a share via SELF_SERVE/AUTO_FIX:
+
+| Automation rate | Time recovered/day | Value/technician/year |
+|---|---|---|
+| 30% (conservative) | ~1.1 h | ~CHF 15k |
+| 50% (target) | ~1.9 h | ~CHF 25k |
+| 70% (optimistic) | ~2.6 h | ~CHF 35k |
+
+*(CHF 60/h fully-loaded technician service cost, 220 working days/year, 45 min/ticket midpoint.)*
+
+From a CTO's perspective this is a **capacity-reallocation lever, not a committed savings line**: recovered hours are assumed to shift toward L2/L3-adjacent or non-repetitive work, consistent with the Swiss ICT talent scarcity framing above. 
+
+Not netted against this figure: knowledge-base curation/maintenance effort, LLM inference cost per ticket, and technician review overhead during AUTO_FIX confirmation — flagged as pilot measurement targets, not omissions from the model.
+
+
+**Assumption:** ~5 routine tickets/day/technician, 30–60 min avg handling time depending on ticket nature and service level (VIP/standard user). Midpoint (45 min) used as the primary estimate → ~3.75 h/day/technician spent on pattern-matching and troubleshooting work.
+
+| Automation rate | Time recovered/day | Value/technician/year |
+|---|---|---|
+| 30% (conservative) | ~1.1 h | ~CHF 15k |
+| 50% (target) | ~1.9 h | ~CHF 25k |
+| 70% (optimistic) | ~2.6 h | ~CHF 35k |
+
+*(CHF 60/h fully-loaded technician cost, 220 working days/year, 45 min/ticket midpoint. Scales linearly with headcount and actual ticket volume.)*
+
+For the customer, this reads as: **for every technician running L1 support, TriagePilot's target automation band (30–70%) recovers CHF 15k–35k/year in reclaimed skilled hours** — not cash saved directly, but capacity freed from repetitive work and redirected to complex or customer-facing tasks. Not netted against this figure: knowledge-base curation/maintenance effort, LLM inference cost per ticket, and technician review overhead during AUTO_FIX confirmation — flagged as pilot measurement targets, not omissions from the model.
+
 
 > **Primary metric: MTTR (Mean Time to Resolution) for L1 tickets, and % of issues resolved without technician dispatch.**
 
-### Problem
-Most L1 tickets aren't hard — they're just waiting. Routine issues (VPN certs, lockouts, cache clears, drive remaps) sit in a queue until a technician notices them, identifies the pattern, looks up the procedure, and acts. The fix is rarely novel; the dispatch delay is the cost.
-
-### Who benefits
-| User | Benefit |
-|---|---|
-| **Employees** | Faster resolution — seconds instead of hours for well-documented issues |
-| **IT technicians** | Fewer routine tickets; more time for complex, escalated cases |
-| **IT Ops / cost owner** | Lower cost-per-ticket; quantifiable automation rate by issue category |
-
-### Economic potential
-Illustrative, not measured: a single technician handling 20 routine tickets/day at 10 min each spends ~3.5 h on pattern-matching that TriagePilot can automate. The ESCALATE path still routes to a human — but with a pre-filled ticket and diagnostic summary, reducing intake time there too.
-
-### Existing solutions
-ServiceNow Virtual Agent, Moveworks, and Microsoft Copilot for Service address this space. Differentiation here:
-- **Transparent retrieval grounding** — every answer is traceable to a specific KB line (see sentence-level highlights in section 1)
-- **Explicit human-in-the-loop** on every action — Confirm/Cancel gate before any tool runs or ticket is created; built for auditability, not just automation
-- **Self-contained** — runs locally with one API key; no ITSM integration contract required to demo
+**Why MTTR and % automated are the KPIs — and the bridge, not just two metrics:**
+MTTR is an operational metric IT already tracks and trusts — it proves the tool works at the technical level (tickets resolve faster). % of tickets resolved without technician dispatch is the automation rate that feeds directly into the CHF table above — it's the one lever the business case actually depends on. Together they form a single reporting pair that speaks both languages at once: an IT lead reads MTTR and sees service quality; a CTO reads the same dashboard's automation % and reads it straight through to the recovered-hours table. Neither metric alone bridges IT and business — MTTR alone says nothing about cost, and automation % alone says nothing about whether service quality held up while automating. Reported together, they're the minimum pair that lets one dashboard answer both "is it working" and "is it worth it."
 
 ### Data potential
 Each triage interaction logs (query, retrieved doc, decision path, operator action). Over time this supports:
