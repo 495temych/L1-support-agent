@@ -82,14 +82,20 @@ _PATH_COLORS = {
     "AUTO_FIX":     ("#0550ae", "#dbeafe"),
     "ESCALATE":     ("#9a3412", "#fef3c7"),
     "OUT_OF_SCOPE": ("#555555", "#f0f0f0"),
+    "NO_TOOLS":     ("#6d28d9", "#ede9fe"),
+}
+
+_PATH_LABELS = {
+    "NO_TOOLS": "NO TOOLS (RAG OFF)",
 }
 
 def _badge(path: str) -> str:
     fg, bg = _PATH_COLORS.get(path, ("#555", "#eee"))
+    label = _PATH_LABELS.get(path, path)
     return (
         f'<span style="background:{bg};color:{fg};border:1px solid {fg}33;'
         f'padding:4px 12px;border-radius:5px;font-weight:700;'
-        f'font-size:0.95em;letter-spacing:0.03em">{path}</span>'
+        f'font-size:0.95em;letter-spacing:0.03em">{label}</span>'
     )
 
 
@@ -226,6 +232,14 @@ if st.session_state.result:
 
     elif path == "OUT_OF_SCOPE":
         st.info("Outside IT support scope — no action taken.")
+
+    elif path == "NO_TOOLS":
+        st.info(
+            "RAG is off, so the agent had no tools and no company-specific grounding "
+            "for this call — it could only respond with generic, ungrounded advice. "
+            "No structured decision or action is available. Turn retrieval back on "
+            "to see the grounded, tool-capable agent."
+        )
 
     # ── Interactive paths (both require operator confirmation) ───────────────
     elif path == "AUTO_FIX":

@@ -218,13 +218,31 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
     else:
         user_msg = f"User issue: {query}"
 
-    response = client.messages.create(
+    create_kwargs = dict(
         model=MODEL,
         max_tokens=1024,
         system=system,
         messages=[{"role": "user", "content": user_msg}],
-        tools=TOOLS,
     )
+    if use_retrieval:
+        # Tools are withheld entirely when RAG is off, not just retrieval — the agent
+        # must reason in plain text only and cannot propose or execute any action.
+        create_kwargs["tools"] = TOOLS
+
+    response = client.messages.create(**create_kwargs)
+
+    if not use_retrieval:
+        # No tools were offered, so there's no tool_use block to process and no
+        # SELF_SERVE/AUTO_FIX/ESCALATE path to parse out of the text.
+        reasoning = "".join(block.text for block in response.content if block.type == "text")
+        return {
+            "retrieved": None,
+            "use_retrieval": False,
+            "path": "NO_TOOLS",
+            "reasoning": reasoning,
+            "tool_name": None,
+            "tool_input": None,
+        }
 
     path = "ESCALATE"
     reasoning = ""
