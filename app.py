@@ -201,7 +201,7 @@ if st.session_state.result:
                 clean = h["text"].replace("**", "").replace("`", "").replace("*", "")
                 st.markdown(
                     f'<div style="background:#fffbeb;border-left:3px solid #f59e0b;'
-                    f'padding:5px 10px;margin:3px 0;font-size:0.88em;line-height:1.4;">'
+                    f'padding:5px 10px;margin:3px 0;font-size:0.88em;line-height:1.4;color:#78350f;">'
                     f'<code style="color:#92400e;font-size:0.82em;background:none">'
                     f'{h["score"]:.2f}</code>'
                     f'&ensp;{clean}</div>',
