@@ -8,11 +8,11 @@ In the Swiss-german region, that delay is expensive on both ends: skilled IT hou
 
 ### Stakeholder Profiles Breakdown
 
-| Stakeholder | Job-to-be-Done | Pain | Gain — Basic | Gain — Surprising | Target metric |
+| Stakeholder | Job-to-be-Done | Pain | Gain — Basic | Gain — Surprising | Key metric |
 |---|---|---|---|---|---|
 | **Employees** | Get back to work with minimal disruption | Long wait for trivial issues; repeating context to technicians | Faster resolution for well-documented issues | Explainable, grounded self-serve guides for basic IT issues; generating a service ticket based on their issue automatically | Mostly qualitative, but IT issues influence productivity|
-| **L1 Technicians** | Triage & resolve routine tickets, escalate the rest with context | Repetitive pattern-matching, repetitive work; unclear user requests | Fewer routine tickets to resolve manually | AUTO_FIX shifts burden from diagnosis to confirmation; escalation write-ups auto-generated | **Yes** — 20 tickets/day × 10 min × 30–70% automation → 1.0–2.3 h/day recovered → **CHF 13k–31k/year/technician** (CHF 60/h, 220 days) |
-| **L2/L3 Specialists** | Resolve complex issues without re-diagnosing from scratch | Escalations under-documented; quality varies by which L1 technician handled it | Escalations arrive with diagnostic summary + retrieval trace | Consistent format regardless of which technician escalated | Time-to-first-action or MTTR |
+| **L1 Technicians** | Triage & resolve routine tickets, escalate the rest with context | Repetitive pattern-matching, repetitive work; unclear user requests | Fewer routine tickets to resolve manually | AUTO_FIX shifts burden from diagnosis to confirmation; escalation write-ups auto-generated | Time-to-first-action|
+| **L2/L3 Specialists** | Resolve complex issues without re-diagnosing from scratch | Escalations under-documented; quality varies by which L1 technician handled it | Escalations arrive with diagnostic summary + retrieval trace | Consistent format regardless of which technician escalated | Mean-time-to-resolution |
 | **CTO** | Keep cost-per-ticket low, maintain SLA & audit compliance | Cost-per-ticket opaque; no per-category automation visibility; audit risk on unlogged fixes | Lower cost-per-ticket; automation-rate reporting by category | Confirmation log doubles as compliance/audit evidence | Cost-per-ticket by category; SLA compliance rate |
 
 ### Economic potential:
@@ -25,30 +25,14 @@ At 5 tickets/day × 45 min avg, a technician spends ~3.75 h/day on pattern-match
 | 50% (target) | ~1.9 h | ~CHF 25k |
 | 70% (optimistic) | ~2.6 h | ~CHF 35k |
 
-*(CHF 60/h fully-loaded technician service cost, 220 working days/year, 45 min/ticket midpoint.)*
-
-From a CTO's perspective this is a **capacity-reallocation lever, not a committed savings line**: recovered hours are assumed to shift toward L2/L3-adjacent or non-repetitive work, consistent with the Swiss ICT talent scarcity framing above. 
-
-Not netted against this figure: knowledge-base curation/maintenance effort, LLM inference cost per ticket, and technician review overhead during AUTO_FIX confirmation — flagged as pilot measurement targets, not omissions from the model.
-
-
-**Assumption:** ~5 routine tickets/day/technician, 30–60 min avg handling time depending on ticket nature and service level (VIP/standard user). Midpoint (45 min) used as the primary estimate → ~3.75 h/day/technician spent on pattern-matching and troubleshooting work.
-
-| Automation rate | Time recovered/day | Value/technician/year |
-|---|---|---|
-| 30% (conservative) | ~1.1 h | ~CHF 15k |
-| 50% (target) | ~1.9 h | ~CHF 25k |
-| 70% (optimistic) | ~2.6 h | ~CHF 35k |
-
 *(CHF 60/h fully-loaded technician cost, 220 working days/year, 45 min/ticket midpoint. Scales linearly with headcount and actual ticket volume.)*
 
 For the customer, this reads as: **for every technician running L1 support, TriagePilot's target automation band (30–70%) recovers CHF 15k–35k/year in reclaimed skilled hours** — not cash saved directly, but capacity freed from repetitive work and redirected to complex or customer-facing tasks. Not netted against this figure: knowledge-base curation/maintenance effort, LLM inference cost per ticket, and technician review overhead during AUTO_FIX confirmation — flagged as pilot measurement targets, not omissions from the model.
 
-
 > **Primary metric: MTTR (Mean Time to Resolution) for L1 tickets, and % of issues resolved without technician dispatch.**
 
 **Why MTTR and % automated are the KPIs — and the bridge, not just two metrics:**
-MTTR is an operational metric IT already tracks and trusts — it proves the tool works at the technical level (tickets resolve faster). % of tickets resolved without technician dispatch is the automation rate that feeds directly into the CHF table above — it's the one lever the business case actually depends on. Together they form a single reporting pair that speaks both languages at once: an IT lead reads MTTR and sees service quality; a CTO reads the same dashboard's automation % and reads it straight through to the recovered-hours table. Neither metric alone bridges IT and business — MTTR alone says nothing about cost, and automation % alone says nothing about whether service quality held up while automating. Reported together, they're the minimum pair that lets one dashboard answer both "is it working" and "is it worth it."
+MTTR is an operational metric IT already tracks and trusts — it proves the tool works at the technical level (tickets resolve faster). % of tickets resolved without technician dispatch is the automation rate that feeds directly into the CHF table above — it's the one lever the business case actually depends on. Together they form a single reporting pair that speaks both languages at once: an IT lead reads MTTR and sees service quality; a CTO reads the same dashboard's automation % and reads it straight through to the recovered-hours table. 
 
 ### Data potential
 Each triage interaction logs (query, retrieved doc, decision path, operator action). Over time this supports:
@@ -114,7 +98,7 @@ Without retrieval, the model can only give generic advice — it has no way to k
 - `SEC-04` — the internal policy requiring escalation after 2+ lockouts in 24 h
 - Q1 2026 AnyConnect → GlobalProtect migration context
 
-**RAG on/off toggle in the demo**: pick any IT query, note the org-specific steps and retrieved document, then toggle RAG off and re-run. RAG off doesn't just skip retrieval — the agent is given no tools at all for that call, so it can't classify a path or propose an action either. It falls back to generic, hedged advice with no Limmatica context and an explicit `NO TOOLS (RAG OFF)` badge. The contrast is immediate and structural, not just a worse answer.
+**RAG on/off toggle**: Without RAG, an LLM falls back to generic, hedged advice with no specific references to client company's IT environment.
 
 ---
 
