@@ -203,14 +203,21 @@ if st.session_state.result:
 
     # 1 · Retrieval
     st.subheader("1 · Retrieval")
-    if result["retrieved"]:
-        r = result["retrieved"]
-        with st.expander(f"**{r['name']}** — similarity {r['score']:.2f}", expanded=False):
-            st.markdown(r["content"])
+    units = result["retrieved"]
+    if units:
+        doc_names = {u["doc"] for u in units}
+        if len(doc_names) > 1:
+            st.caption("🔗 Matched units from **different KB documents** — cross-document grounding.")
 
-        highlights = r.get("highlights", [])
-        if highlights:
-            st.markdown("**Why this document matched — top passages:**")
+        for u in units:
+            label = u["doc"] + (f" § {u['section']}" if u["section"] else "")
+            badge = " · *reference section*" if u["section"] else ""
+            with st.expander(f"**{label}** — similarity {u['score']:.2f}{badge}", expanded=False):
+                st.markdown(u["text"])
+
+            highlights = u.get("highlights", [])
+            if highlights:
+                st.markdown(f"**Why {label} matched — top passages:**")
             for h in highlights:
                 # Strip markdown characters for clean plain-text display in the highlight strip
                 clean = h["text"].replace("**", "").replace("`", "").replace("*", "")

@@ -198,15 +198,20 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
     client = anthropic.Anthropic()
     system = _PROMPT_FILE.read_text()
 
-    retrieved = retrieve(query) if use_retrieval else None
+    retrieved = retrieve(query) if use_retrieval else []
 
     if retrieved:
+        blocks = []
+        for u in retrieved:
+            label = u["doc"] + (f" § {u['section']}" if u["section"] else "")
+            blocks.append(f"**{label}** (similarity score: {u['score']:.2f})\n\n{u['text']}")
+        n = len(retrieved)
         user_msg = (
             f"User issue: {query}\n\n"
             f"---\n"
-            f"Retrieved KB article: **{retrieved['name']}** "
-            f"(similarity score: {retrieved['score']:.2f})\n\n"
-            f"{retrieved['content']}"
+            f"Retrieved KB context — {n} unit{'s' if n != 1 else ''} "
+            f"(may be from different source documents; synthesize across all of them):\n\n"
+            + "\n\n---\n\n".join(blocks)
         )
     elif use_retrieval:
         user_msg = (
@@ -236,7 +241,7 @@ def run_triage(query: str, use_retrieval: bool) -> dict:
         # SELF_SERVE/AUTO_FIX/ESCALATE path to parse out of the text.
         reasoning = "".join(block.text for block in response.content if block.type == "text")
         return {
-            "retrieved": None,
+            "retrieved": [],
             "use_retrieval": False,
             "path": "NO_TOOLS",
             "reasoning": reasoning,
