@@ -97,9 +97,9 @@ def _pending_callout(label: str) -> None:
     """Renders the 'awaiting confirmation' banner above Confirm/Cancel buttons."""
     st.markdown(
         f'<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;'
-        f'padding:10px 14px;margin:10px 0 8px 0;">'
-        f'<strong>&#9888;&#65039; Human-in-the-loop — awaiting your decision</strong><br/>'
-        f'<span style="font-size:0.9em">{label}</span>'
+        f'padding:10px 14px;margin:10px 0 8px 0;color:#78350f;">'
+        f'<strong style="color:#78350f">&#9888;&#65039; Human-in-the-loop — awaiting your decision</strong><br/>'
+        f'<span style="font-size:0.9em;color:#78350f">{label}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
