@@ -2,9 +2,13 @@
 
 ### Problem
 
-Most L1 tickets aren't hard — they're just troubleshooting simple, repetitive tasks. Routine issues (software download and personalization, OS configuration, workplace setup, etc.) sit in a queue until a technician becomes available, identifies the pattern, looks up the procedure, and acts. The fix is rarely novel; the dispatch delay is the struggle.
+Most L1 tickets aren't hard — they're just troubleshooting simple, repetitive tasks. For an office worker, though, it doesn't feel small — work stops until someone shows up to fix it.
 
-In the Swiss-german region, that delay is expensive on both ends: skilled IT hours are costly, and skilled IT capacity is structurally scarce — so time a technician spends pattern-matching a known issue is time not spent on the complex work only they can do. **TriagePilot targets exactly that slice: high-frequency, well-documented, low-novelty tickets.**
+- **The work is repetitive, not complex.** Routine issues (software installs, OS config, workplace setup) sit in a queue until a technician is free, identifies the pattern, looks up the procedure, and acts. The fix is rarely novel — the dispatch delay is the struggle.
+- **In Swiss SMEs, dispatch means travel.** A single technician often supports multiple client locations, since a small office can't justify a full-time on-site IT presence. Travel time to and from site is frequently a larger cost than the fix itself.
+- **Skilled IT hours are expensive and scarce in this region.** Time spent traveling and pattern-matching a known issue is time not spent on the complex work only that technician can do.
+
+**TriagePilot targets exactly that slice: high-frequency, well-documented, low-novelty tickets — resolved remotely, before a trip is even needed.**
 
 ### Stakeholder Profiles Breakdown
 
@@ -17,40 +21,23 @@ In the Swiss-german region, that delay is expensive on both ends: skilled IT hou
 
 ### Economic potential:
 
-At 5 tickets/day × 45 min avg, a technician spends ~3.75 h/day on pattern-matching and troubleshooting work. Automating a share via SELF_SERVE/AUTO_FIX:
+**Assumption (practitioner-sourced, Zurich-area SME dispatch model):** ~4 tickets/day/technician, ~2 h avg per ticket including travel to and from client site.
 
 | Automation rate | Time recovered/day | Value/technician/year |
 |---|---|---|
-| 30% (conservative) | ~1.1 h | ~CHF 15k |
-| 50% (target) | ~1.9 h | ~CHF 25k |
-| 70% (optimistic) | ~2.6 h | ~CHF 35k |
+| 30% (conservative) | ~2.4 h | ~CHF 32k |
+| 50% (target) | ~4.0 h | ~CHF 53k |
+| 70% (optimistic) | ~5.6 h | ~CHF 74k |
 
-*(CHF 60/h fully-loaded technician cost, 220 working days/year, 45 min/ticket midpoint. Scales linearly with headcount and actual ticket volume.)*
+*(CHF 60/h fully-loaded technician cost, 220 working days/year, 2h/ticket including travel, 4 tickets/day.)*
 
-For the customer, this reads as: **for every technician running L1 support, TriagePilot's target automation band (30–70%) recovers CHF 15k–35k/year in reclaimed skilled hours** — not cash saved directly, but capacity freed from repetitive work and redirected to complex or customer-facing tasks. Not netted against this figure: knowledge-base curation/maintenance effort, LLM inference cost per ticket, and technician review overhead during AUTO_FIX confirmation — flagged as pilot measurement targets, not omissions from the model.
-
-> **Primary metric: MTTR (Mean Time to Resolution) for L1 tickets, and % of issues resolved without technician dispatch.**
-
-**Why MTTR and % automated are the KPIs — and the bridge, not just two metrics:**
-MTTR is an operational metric IT already tracks and trusts — it proves the tool works at the technical level (tickets resolve faster). % of tickets resolved without technician dispatch is the automation rate that feeds directly into the CHF table above — it's the one lever the business case actually depends on. Together they form a single reporting pair that speaks both languages at once: an IT lead reads MTTR and sees service quality; a CTO reads the same dashboard's automation % and reads it straight through to the recovered-hours table. 
+For SME customers specifically, remote resolution via SELF_SERVE/AUTO_FIX removes the travel leg entirely for automatable tickets — this is not just faster resolution, it's a dispatch trip that never has to happen. Not netted against this figure: knowledge-base curation/maintenance effort, LLM inference cost per ticket, and technician review overhead during AUTO_FIX confirmation.
 
 ### Data potential
 Every triage run appends a row to `logs.csv` — query, retrieved units, decision path, diagnostic summary, tool called, operator confirmation, escalation queue/priority, response time — and the app's "Live session stats" panel turns that into a running summary (path distribution, automation rate, avg response time) shown alongside the golden-set eval (see [Evaluation](#evaluation)). Over time, the same log supports:
 - Retrieval threshold tuning, per category
 - Cost-per-resolution-path analysis (AUTO_FIX cost vs. ESCALATE technician-hour cost)
 - A natural link to quantitative/pricing-style analysis of automation vs. human dispatch
-
----
-
-## How it works
-
-**Stack:** Claude API (generation + tool-use), `sentence-transformers` with `all-MiniLM-L6-v2` (local embeddings — no API cost per query), Streamlit (frontend + session state for HITL confirmation).
-
-**Knowledge base:** 12 Markdown files. 11 are single-issue playbooks, each embedded whole as one retrieval unit. The 12th, `company-profile.md`, is a multi-topic org reference (systems, escalation queues, policies) — it's split into one unit per `##` section instead, so a query can match its one relevant section directly rather than the whole mixed-topic file. 17 retrievable units total. `retrieve()` returns up to the top 2 units (cosine similarity, threshold 0.35 per unit) ranked together regardless of source doc — this is what lets one query pull both an issue playbook and a policy section in the same call. Within each matched unit, individual lines are re-scored against the same query embedding for sentence-level highlighting (threshold 0.25) — same model, no extra inference cost, no additional dependencies.
-
-**Decision flow:** single-shot (one LLM call per query). The model receives the query + up to 2 retrieved KB units — possibly from different source documents — and must classify immediately into SELF_SERVE / AUTO_FIX / ESCALATE / OUT_OF_SCOPE, synthesizing across all retrieved units, and call the appropriate tool. No multi-turn — missing information forces an explicit ESCALATE with reasoning rather than a clarifying question. When RAG is off, no tools are offered at all (not just no retrieval) — the agent can only respond in plain, ungrounded text; see the RAG on/off toggle below.
-
-**Tool execution:** the agent returns a structured tool call (name + parameters). The app shows the proposed action to the operator before anything runs. On Confirm, the tool is dispatched. On Cancel, behavior depends on the path: for ESCALATE, nothing changes and no ticket is created; for AUTO_FIX, declining pre-fills an escalation ticket from the diagnosis already in that response (no new model call) and asks for a separate confirmation before it's sent. Every terminal state is logged with a timestamp.
 
 ---
 
@@ -93,6 +80,18 @@ flowchart LR
 **AUTO_FIX decline:** declining a proposed fix doesn't end the flow either. The app pre-fills an escalation ticket client-side from the diagnosis already produced in that response — no second model call — carrying the declined tool's name, a fixed reason ("User declined proposed automated fix; issue persists"), the existing diagnostic summary, and a `P3-Normal` default priority. That ticket gets its own, separate Confirm ("Send to ServiceNow") / Cancel step before `create_escalation_ticket` actually runs. Accepting AUTO_FIX and declining it both end up at the same human-confirmation pattern — they diverge only in what's being confirmed, not in whether confirmation is required.
 
 **RAG off:** none of the four paths above apply. The agent is given no tools at all for that call, so it cannot classify or act — it just returns hedged, ungrounded text, and the UI shows a distinct `NO TOOLS (RAG OFF)` badge instead of a path badge.
+
+---
+
+## How it works
+
+**Stack:** Claude API (generation + tool-use), `sentence-transformers` with `all-MiniLM-L6-v2` (local embeddings — no API cost per query), Streamlit (frontend + session state for HITL confirmation).
+
+**Knowledge base:** 12 Markdown files. 11 are single-issue playbooks, each embedded whole as one retrieval unit. The 12th, `company-profile.md`, is a multi-topic org reference (systems, escalation queues, policies) — it's split into one unit per `##` section instead, so a query can match its one relevant section directly rather than the whole mixed-topic file. 17 retrievable units total. `retrieve()` returns up to the top 2 units (cosine similarity, threshold 0.35 per unit) ranked together regardless of source doc — this is what lets one query pull both an issue playbook and a policy section in the same call. Within each matched unit, individual lines are re-scored against the same query embedding for sentence-level highlighting (threshold 0.25) — same model, no extra inference cost, no additional dependencies.
+
+**Decision flow:** single-shot (one LLM call per query). The model receives the query + up to 2 retrieved KB units — possibly from different source documents — and must classify immediately into SELF_SERVE / AUTO_FIX / ESCALATE / OUT_OF_SCOPE, synthesizing across all retrieved units, and call the appropriate tool. No multi-turn — missing information forces an explicit ESCALATE with reasoning rather than a clarifying question. When RAG is off, no tools are offered at all (not just no retrieval) — the agent can only respond in plain, ungrounded text; see the RAG on/off toggle below.
+
+**Tool execution:** the agent returns a structured tool call (name + parameters). The app shows the proposed action to the operator before anything runs. On Confirm, the tool is dispatched. On Cancel, behavior depends on the path: for ESCALATE, nothing changes and no ticket is created; for AUTO_FIX, declining pre-fills an escalation ticket from the diagnosis already in that response (no new model call) and asks for a separate confirmation before it's sent. Every terminal state is logged with a timestamp.
 
 ---
 
@@ -196,9 +195,9 @@ The tools here are called via Anthropic's native tool-use API (`tools=` in `mess
 <summary><strong>Evaluation metrics for production RAG</strong></summary>
 
 - **MTTR per path** — the primary business metric. Baseline against queue-mediated L1 (4–8 h target). Track separately for SELF_SERVE, AUTO_FIX, and ESCALATE so regressions are path-specific.
-- **Retrieval precision@1** — fraction of queries where the top-ranked KB article is the correct one. Baseline requires a labelled query→article mapping.
+- **Retrieval accuracy@1** — fraction of queries where the top-ranked KB article is the correct one. Baseline requires a labelled query→article mapping.
 - **Path accuracy** — fraction of queries classified into the correct path. Requires a held-out test set with ground-truth labels.
-- **Escalation precision** — fraction of escalated tickets that the receiving technician confirms were correctly escalated.
+- **Escalation accuracy** — fraction of escalated tickets that the receiving technician confirms were correctly escalated.
 - **Tool parameter validity** — fraction of AUTO_FIX calls with only concrete parameter values (no unresolved `current.user` in production).
 - **False AUTO_FIX rate** — fraction of AUTO_FIX executions that fail or require a follow-up ticket.
 
