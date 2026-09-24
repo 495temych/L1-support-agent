@@ -7,11 +7,11 @@ results in a collapsed expander (cached at startup, not re-run per query).
 The golden set mirrors the "Demo queries" table in README.md — same
 queries, same expected paths — plus a hand-labeled expected_units set per
 query: the KB unit(s) (doc name, or "doc::section" for a company-profile.md
-section) that should be retrieved for that query to be considered grounded
-correctly. Most rows have a single expected unit, where precision@2 and
-recall@2 collapse to the same value as top-1 accuracy; the "Locked out
-twice already today" row has two, since it's the deliberate cross-document
-case (account-access playbook + company-profile's SEC-04 policy section).
+section) that the top-ranked retrieval result should be one of, for the
+query to be considered grounded correctly. Most rows have a single expected
+unit; the "Locked out twice already today" row has two, since either the
+account-access playbook or company-profile's SEC-04 policy section would
+correctly ground the top-1 result (it's the deliberate cross-document case).
 """
 from agent import run_triage
 
@@ -76,22 +76,12 @@ def _unit_id(u: dict) -> str:
     return u["doc"] if u["section"] is None else f"{u['doc']}::{u['section']}"
 
 
-def _retrieval_metrics(expected: set, retrieved_ids: list) -> dict:
+def _top1_correct(expected: set, retrieved_ids: list) -> bool:
     top1 = retrieved_ids[0] if retrieved_ids else None
     if not expected:
         # Nothing should have matched — correct iff retrieval also found nothing.
-        return {
-            "top1_correct": top1 is None,
-            "precision": 1.0 if not retrieved_ids else 0.0,
-            "recall": 1.0,
-        }
-    got = set(retrieved_ids)
-    tp = len(got & expected)
-    return {
-        "top1_correct": top1 in expected,
-        "precision": (tp / len(got)) if got else 0.0,
-        "recall": tp / len(expected),
-    }
+        return top1 is None
+    return top1 in expected
 
 
 def run_eval() -> list[dict]:
@@ -100,14 +90,11 @@ def run_eval() -> list[dict]:
     for case in GOLDEN_SET:
         result = run_triage(case["query"], use_retrieval=True)
         retrieved_ids = [_unit_id(u) for u in result["retrieved"]]
-        m = _retrieval_metrics(case["expected_units"], retrieved_ids)
         rows.append({
             "query": case["query"],
             "expected_units": case["expected_units"],
             "retrieved_units": retrieved_ids,
-            "top1_correct": m["top1_correct"],
-            "precision_at_2": m["precision"],
-            "recall_at_2": m["recall"],
+            "top1_correct": _top1_correct(case["expected_units"], retrieved_ids),
             "expected_path": case["expected_path"],
             "actual_path": result["path"],
             "path_correct": result["path"] in case["expected_path"],
@@ -120,8 +107,6 @@ def summarize(rows: list[dict]) -> dict:
     return {
         "n": n,
         "retrieval_accuracy": sum(r["top1_correct"] for r in rows) / n,
-        "precision_at_2": sum(r["precision_at_2"] for r in rows) / n,
-        "recall_at_2": sum(r["recall_at_2"] for r in rows) / n,
         "path_accuracy": sum(r["path_correct"] for r in rows) / n,
     }
 
@@ -131,27 +116,20 @@ def _fmt_units(ids) -> str:
 
 
 def print_report(rows: list[dict], summary: dict) -> None:
-    multi = [r for r in rows if len(r["expected_units"]) > 1]
-    print(f"Golden-set evaluation — {summary['n']} queries "
-          f"({len(multi)} with >1 expected unit, where precision@2/recall@2 "
-          f"diverge from top-1 accuracy; all other rows have precision@2 == "
-          f"recall@2 == top1_correct by construction)\n")
+    print(f"Golden-set evaluation — {summary['n']} queries\n")
 
     for r in rows:
         mark = lambda ok: "✓" if ok else "✗"
         print(f'{mark(r["top1_correct"])} retrieval | {mark(r["path_correct"])} path  '
               f'"{r["query"]}"')
         print(f'    expected units:  {_fmt_units(r["expected_units"])}')
-        print(f'    retrieved units: {_fmt_units(r["retrieved_units"])}  '
-              f'(precision@2={r["precision_at_2"]:.2f}, recall@2={r["recall_at_2"]:.2f})')
+        print(f'    retrieved units: {_fmt_units(r["retrieved_units"])}')
         print(f'    expected path:   {"/".join(sorted(r["expected_path"]))}   '
               f'actual: {r["actual_path"]}')
         print()
 
     print(
         f"SUMMARY  retrieval_accuracy={summary['retrieval_accuracy']:.0%}  "
-        f"precision@2={summary['precision_at_2']:.0%}  "
-        f"recall@2={summary['recall_at_2']:.0%}  "
         f"path_accuracy={summary['path_accuracy']:.0%}"
     )
 

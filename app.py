@@ -521,11 +521,9 @@ with st.expander("🧪 Evaluation — golden-set results", expanded=False):
         f"{eval_summary['n']} hand-labeled queries — a regression check on this KB "
         f"and prompt, not an external benchmark. Run standalone: `python eval.py`."
     )
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2 = st.columns(2)
     m1.metric("Retrieval accuracy", f"{eval_summary['retrieval_accuracy']:.0%}")
-    m2.metric("Precision@2", f"{eval_summary['precision_at_2']:.0%}")
-    m3.metric("Recall@2", f"{eval_summary['recall_at_2']:.0%}")
-    m4.metric("Path accuracy", f"{eval_summary['path_accuracy']:.0%}")
+    m2.metric("Path accuracy", f"{eval_summary['path_accuracy']:.0%}")
 
     st.dataframe(
         [
@@ -534,8 +532,6 @@ with st.expander("🧪 Evaluation — golden-set results", expanded=False):
                 "Expected units": ", ".join(sorted(r["expected_units"])) or "(none)",
                 "Retrieved units": ", ".join(r["retrieved_units"]) or "(none)",
                 "Top-1": "✓" if r["top1_correct"] else "✗",
-                "P@2": f'{r["precision_at_2"]:.2f}',
-                "R@2": f'{r["recall_at_2"]:.2f}',
                 "Expected path": "/".join(sorted(r["expected_path"])),
                 "Actual path": r["actual_path"],
                 "Path": "✓" if r["path_correct"] else "✗",
