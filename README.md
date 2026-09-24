@@ -15,13 +15,13 @@ Most L1 tickets aren't hard — they're just troubleshooting simple, repetitive 
 | Stakeholder | Job-to-be-Done | Pain | Gain — Basic | Gain — Surprising | Key metric |
 |---|---|---|---|---|---|
 | **Employees** | Get back to work with minimal disruption | Long wait for trivial issues; repeating context to technicians | Faster resolution for well-documented issues | Explainable, grounded self-serve guides for basic IT issues; generating a service ticket based on their issue automatically | Mostly qualitative, but IT issues influence productivity|
-| **L1 Technicians** | Triage & resolve routine tickets, escalate the rest with context | Repetitive pattern-matching, repetitive work; unclear user requests | Fewer routine tickets to resolve manually | AUTO_FIX shifts burden from diagnosis to confirmation; escalation write-ups auto-generated | Time-to-first-action|
-| **L2/L3 Specialists** | Resolve complex issues without re-diagnosing from scratch | Escalations under-documented; quality varies by which L1 technician handled it | Escalations arrive with diagnostic summary + retrieval trace | Consistent format regardless of which technician escalated | Mean-time-to-resolution |
-| **CTO** | Keep cost-per-ticket low, maintain SLA & audit compliance | Cost-per-ticket opaque; no per-category automation visibility; audit risk on unlogged fixes | Lower cost-per-ticket; automation-rate reporting by category | Confirmation log doubles as compliance/audit evidence | Cost-per-ticket by category; SLA compliance rate |
+| **L1 Technicians** (on-site dispatch, multi-client) | Triage & resolve routine tickets, escalate the rest with context | Repetitive pattern-matching across multiple unfamiliar client environments; unclear user requests | Fewer routine tickets to resolve manually or dispatch for | AUTO_FIX shifts burden from diagnosis to confirmation; escalation write-ups auto-generated | Time-to-first-action|
+| **L2/L3 Specialists** (remote, outsourced offshore)| Resolve complex issues without re-diagnosing from scratch; keep documentation up-to-date | Escalations under-documented; no live L1 to call back and clarify across timezones; quality varies by which L1 technician handled it | Escalations arrive with diagnostic summary + retrieval trace | Consistent documentation regardless of which technician escalated | Mean-time-to-resolution |
+| **CTO** (of the IT service provider) | Keep cost-per-ticket low, maintain SLA & audit compliance; price and justify contracts | Cost-per-ticket opaque; no per-category automation visibility; audit risk on unlogged fixes | Lower cost-per-ticket; automation-rate reporting by client account | Automation-rate data becomes a pricing/contract lever — accounts with low automation potential (highly custom environments) can be identified and priced or staffed differently  | Cost-per-ticket by category; SLA compliance rate |
 
 ### Economic potential:
 
-**Assumption (practitioner-sourced, Zurich-area SME dispatch model):** ~4 tickets/day/technician, ~2 h avg per ticket including travel to and from client site.
+**Assumption:** ~4 tickets/day/technician, ~2 h avg per ticket including travel to and from client site.
 
 | Automation rate | Time recovered/day | Value/technician/year |
 |---|---|---|
@@ -97,13 +97,15 @@ flowchart LR
 
 ## Why a knowledge base matters
 
-Without retrieval, the model can only give generic advice — it has no way to know Limmatica's internal portal addresses, script paths, AD group names, or policy codes. The KB articles contain details that no pre-trained model could know:
+A dispatch technician supporting multiple SME clients can't hold each client's environment in their head — Limmatica's AD group names aren't the same as the next client's, and policies get updated independently of any single technician's memory. Without retrieval, the model faces the same problem: it can only give generic advice — it has no way to know Limmatica's internal portal addresses, script paths, AD group names, or policy codes. The KB articles contain details that no pre-trained model, and no technician juggling several clients, could reliably carry:
 
 - `vpn-gp.limmatica.corp` — the GlobalProtect gateway address post-migration
 - `\\IT-TOOLS\Scripts\reset-vpn-profile.ps1` — the exact remediation script
 - `Finance-RW` — the AD group that governs shared-drive access for Finance users
 - `SEC-04` — the internal policy requiring escalation after 2+ lockouts in 24 h
 - Q1 2026 AnyConnect → GlobalProtect migration context
+
+This is where RAG's value is structural, not incidental: each client's KB lives and updates independently in its own retrieval source, so a technician (or the agent acting on their behalf) always pulls the *current* policy and config for *that* client at query time — without needing to have memorized it, and without risking a stale or cross-client mix-up.
 
 **RAG on/off toggle**: Without RAG, an LLM falls back to generic, hedged advice with no specific references to client company's IT environment.
 

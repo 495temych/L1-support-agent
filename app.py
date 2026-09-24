@@ -105,10 +105,13 @@ def _log_run(result: dict, response_time_sec: float) -> int | None:
         "response_time_sec": f"{response_time_sec:.2f}",
     }
 
-    is_new_file = not LOG_FILE.exists()
+    # Header goes out once — when the file doesn't exist yet, or exists but is empty
+    # (e.g. a fresh `touch` or a truncated file). Checking .exists() alone would skip
+    # the header forever on an empty-but-present file, corrupting the CSV on next read.
+    needs_header = not LOG_FILE.exists() or LOG_FILE.stat().st_size == 0
     with open(LOG_FILE, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=LOG_FIELDS)
-        if is_new_file:
+        if needs_header:
             writer.writeheader()
         writer.writerow(row)
 
