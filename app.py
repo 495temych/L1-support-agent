@@ -1,6 +1,9 @@
+import csv
 import os
 import sys
+import time
 import importlib
+from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -27,6 +30,7 @@ if "modules_reloaded" not in st.session_state:
 importlib.reload(_agent_mod)
 from agent import run_triage
 import eval as _eval_mod
+import analyze_logs as _analyze_mod
 
 st.set_page_config(
     page_title="L1 Support Agent — Limmatica AG",
@@ -46,9 +50,85 @@ for key, default in [
     ("tool_result", None),
     ("query_text", ""),
     ("use_retrieval", True),
+    ("pending_log_row", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
+
+# ── Usage logging (real runs only — logs.csv starts empty, populated only here) ──
+LOG_FILE = Path(__file__).parent / "logs.csv"
+LOG_FIELDS = [
+    "timestamp", "query", "retrieved_units", "decision_path", "diagnostic_summary",
+    "tool_called", "confirmed", "escalation_queue", "priority", "response_time_sec",
+]
+
+
+def _is_header_line(line: str) -> bool:
+    # Skip bare markdown headers like "**Step 1 — Diagnose**" or "**Diagnosis**" — we
+    # want the actual sentence that follows, not the section label, as the log summary.
+    return line.startswith("**") and line.endswith("**") and line.count("**") == 2
+
+
+def _log_run(result: dict, response_time_sec: float) -> int | None:
+    """Append one row to logs.csv for a completed triage run and return its 0-indexed
+    position among data rows, so a later Confirm/Cancel can patch `confirmed` in place.
+    Skips NO_TOOLS runs — RAG-off never reaches Step 2, so there's no decision_path
+    value for it in the documented schema.
+    """
+    if result["path"] == "NO_TOOLS":
+        return None
+
+    units = result["retrieved"] or []
+    retrieved_units = ";".join(
+        u["doc"] + (f"::{u['section']}" if u["section"] else "") for u in units
+    ) or "none"
+    diagnostic_summary = next(
+        (l.strip() for l in (result["reasoning"] or "").split("\n")
+         if len(l.strip()) > 15 and not _is_header_line(l.strip())),
+        "",
+    )[:150]
+    tool_input = result["tool_input"] or {}
+    is_escalate = result["path"] == "ESCALATE"
+
+    row = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "query": result.get("query", ""),
+        "retrieved_units": retrieved_units,
+        "decision_path": result["path"],
+        "diagnostic_summary": diagnostic_summary,
+        "tool_called": result["tool_name"] or "",
+        "confirmed": "",  # patched later for AUTO_FIX rows by _patch_confirmed
+        "escalation_queue": tool_input.get("queue", "") if is_escalate else "",
+        "priority": tool_input.get("priority", "") if is_escalate else "",
+        "response_time_sec": f"{response_time_sec:.2f}",
+    }
+
+    is_new_file = not LOG_FILE.exists()
+    with open(LOG_FILE, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=LOG_FIELDS)
+        if is_new_file:
+            writer.writeheader()
+        writer.writerow(row)
+
+    with open(LOG_FILE, newline="") as f:
+        n_data_rows = sum(1 for _ in csv.reader(f)) - 1  # minus header
+    return n_data_rows - 1
+
+
+def _patch_confirmed(row_index: int | None, confirmed: bool) -> None:
+    """Rewrite logs.csv with `confirmed` set on one row — only meaningful for AUTO_FIX
+    rows, since that's the only path where declining actually prevents an action."""
+    if row_index is None or not LOG_FILE.exists():
+        return
+    with open(LOG_FILE, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if 0 <= row_index < len(rows) and rows[row_index]["decision_path"] == "AUTO_FIX":
+        rows[row_index]["confirmed"] = "true" if confirmed else "false"
+        with open(LOG_FILE, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=LOG_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
 
 
 # ── Callbacks ───────────────────────────────────────────────────────────────────
@@ -56,10 +136,12 @@ def _confirm():
     r = st.session_state.result
     st.session_state.tool_result = _tools_mod.dispatch(r["tool_name"], r["tool_input"] or {})
     st.session_state.tool_state = "confirmed"
+    _patch_confirmed(st.session_state.get("pending_log_row"), confirmed=True)
 
 
 def _cancel():
     st.session_state.tool_state = "cancelled"
+    _patch_confirmed(st.session_state.get("pending_log_row"), confirmed=False)
 
 
 def _escalate_self_serve():
@@ -194,8 +276,10 @@ with st.form("query_form", clear_on_submit=False):
 
 # ── Execute triage ──────────────────────────────────────────────────────────────
 if submitted and query.strip():
+    t0 = time.time()
     with st.spinner("Running triage…"):
         result = run_triage(query.strip(), st.session_state.use_retrieval)
+    response_time_sec = time.time() - t0
     # Safety net: if model chose ESCALATE in text but skipped the tool call,
     # synthesize a minimal ticket so the confirmation card always renders.
     if result["path"] == "ESCALATE" and result["tool_name"] is None:
@@ -210,6 +294,7 @@ if submitted and query.strip():
             "priority": "P3-Normal",
         }
     st.session_state.result = result
+    st.session_state.pending_log_row = _log_run(result, response_time_sec)
     _init_tool_state(result)
 
 # ── Results ─────────────────────────────────────────────────────────────────────
@@ -370,8 +455,66 @@ if st.session_state.result:
                 "Review the reasoning above and raise a ticket manually if needed."
             )
 
-# ── Evaluation ──────────────────────────────────────────────────────────────────
+# ── Stats: live session usage vs. fixed golden-set eval ──────────────────────────
+# These are two different things, shown side by side but never merged into one number:
+# live stats are real queries actually run through this app (logs.csv, grows over time);
+# the eval below is a fixed 10-query regression check (eval.py), independent of usage.
 st.divider()
+
+with st.expander("📊 Live session stats — from logs.csv (real queries run through this app)", expanded=False):
+    live = _analyze_mod.summary_stats()
+    st.caption(
+        "Real usage logged by this app during testing/demo — not the fixed golden-set "
+        "eval below. logs.csv starts empty; every row here came from an actual query "
+        "submitted above. Run standalone: `python analyze_logs.py`."
+    )
+
+    if live["n"] == 0:
+        st.info("No queries logged yet — run a query above to populate logs.csv.")
+    else:
+        if live["low_sample"]:
+            st.warning(
+                f"Only {live['n']} quer{'y' if live['n'] == 1 else 'ies'} logged — "
+                f"sample size too small for a stable rate. Numbers below are illustrative "
+                f"only, not a reliable rate."
+            )
+
+        c1, c2 = st.columns(2)
+        c1.metric("Total logged queries", live["n"])
+        c2.metric(
+            "Automation rate (SELF_SERVE+AUTO_FIX / non-OUT_OF_SCOPE)",
+            f"{live['automation_rate']:.0f}%" if live["automation_rate"] is not None else "n/a",
+        )
+
+        st.markdown("**Count and % by decision path**")
+        st.dataframe(
+            [
+                {"Path": p, "Count": live["counts"][p], "%": f"{live['pct'][p]:.0f}%"}
+                for p in _analyze_mod.PATHS
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+
+        st.markdown(
+            "**Agent response time** (proxy for MTTR — measures decision latency, "
+            "not full ticket resolution), avg by path"
+        )
+        st.dataframe(
+            [
+                {
+                    "Path": p,
+                    "Avg response time (s)": (
+                        f"{live['avg_response_time_sec'][p]:.2f}"
+                        if live["avg_response_time_sec"][p] is not None else "n/a"
+                    ),
+                }
+                for p in _analyze_mod.PATHS
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+
 with st.expander("🧪 Evaluation — golden-set results", expanded=False):
     eval_rows, eval_summary = _run_eval_cached()
     st.caption(
