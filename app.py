@@ -51,6 +51,7 @@ for key, default in [
     ("query_text", ""),
     ("use_retrieval", True),
     ("pending_log_row", None),
+    ("decline_ticket", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -131,6 +132,32 @@ def _patch_confirmed(row_index: int | None, confirmed: bool) -> None:
             writer.writerows(rows)
 
 
+def _build_decline_ticket(result: dict) -> dict:
+    """Pre-fill an escalation ticket client-side after an AUTO_FIX decline — reuses the
+    diagnosis already produced in this response (result['reasoning']), no new model call.
+    """
+    declined_tool = result["tool_name"] or "unknown"
+    reason = "User declined proposed automated fix; issue persists"
+    diagnostic_summary = next(
+        (l.strip() for l in (result["reasoning"] or "").split("\n")
+         if len(l.strip()) > 15 and not _is_header_line(l.strip())),
+        "Automated fix did not run; issue not yet resolved.",
+    )
+    # Same default priority the app's other client-side ticket synthesis paths use
+    # (the safety-net ticket below and the SELF_SERVE-fallback ticket) — there's no
+    # model-assigned priority to reuse here since AUTO_FIX responses never carry one.
+    priority = "P3-Normal"
+    summary_for_ticket = f"{diagnostic_summary} {reason} (declined: {declined_tool})."[:150]
+    return {
+        "diagnostic_summary": diagnostic_summary,
+        "declined_tool": declined_tool,
+        "reason": reason,
+        "queue": "DESKTOP-SUPPORT",
+        "priority": priority,
+        "summary_for_ticket": summary_for_ticket,
+    }
+
+
 # ── Callbacks ───────────────────────────────────────────────────────────────────
 def _confirm():
     r = st.session_state.result
@@ -140,8 +167,31 @@ def _confirm():
 
 
 def _cancel():
-    st.session_state.tool_state = "cancelled"
     _patch_confirmed(st.session_state.get("pending_log_row"), confirmed=False)
+    r = st.session_state.result
+    if r["path"] == "AUTO_FIX":
+        # Decline fallback: no tool call, no new model query — pre-fill an escalation
+        # ticket from the diagnosis already in this response and ask for a separate,
+        # explicit confirmation before it's actually sent.
+        import random
+        st.session_state.decline_ticket = _build_decline_ticket(r)
+        st.session_state.preview_ticket_id = f"INC{random.randint(1000000, 9999999)}"
+        st.session_state.tool_state = "declined"
+    else:
+        st.session_state.tool_state = "cancelled"
+
+
+def _send_decline_ticket():
+    ticket = st.session_state.decline_ticket
+    st.session_state.tool_result = _tools_mod.dispatch(
+        "create_escalation_ticket",
+        {"queue": ticket["queue"], "summary": ticket["summary_for_ticket"], "priority": ticket["priority"]},
+    )
+    st.session_state.tool_state = "declined_sent"
+
+
+def _cancel_decline_ticket():
+    st.session_state.tool_state = "declined_cancelled"
 
 
 def _escalate_self_serve():
@@ -176,6 +226,7 @@ def _init_tool_state(result: dict):
     needs = result["tool_name"] is not None and result["path"] in ("AUTO_FIX", "ESCALATE")
     st.session_state.tool_state = "pending" if needs else None
     st.session_state.tool_result = None
+    st.session_state.decline_ticket = None
     # Generate a stable preview ticket ID shown before and after confirmation
     if result["path"] == "ESCALATE":
         st.session_state.preview_ticket_id = f"INC{random.randint(1000000, 9999999)}"
@@ -397,8 +448,51 @@ if st.session_state.result:
             st.success(f"**Action taken (simulated)**\n\n{tr['detail']}")
             st.caption(f"Timestamp: {tr['timestamp']}")
 
-        elif state == "cancelled":
-            st.warning("Action skipped by operator. No changes made.")
+        elif state == "declined":
+            st.warning(
+                "**Automated fix declined — here's a pre-filled ticket.** Built entirely "
+                "from the diagnosis above — no new model call."
+            )
+            ticket = st.session_state.decline_ticket
+            ticket_id = st.session_state.get("preview_ticket_id", "INC0000000")
+
+            with st.container(border=True):
+                st.markdown("**Draft ServiceNow incident — pending confirmation**")
+                st.markdown("")
+                col_l, col_r = st.columns(2)
+                with col_l:
+                    st.markdown(f"**Ticket ID**\n\n`{ticket_id}`")
+                    st.markdown(f"**Assignment group**\n\n`{ticket['queue']}`")
+                    st.markdown(f"**Priority**\n\n`{ticket['priority']}`")
+                with col_r:
+                    st.markdown(f"**Declined fix**\n\n`{ticket['declined_tool']}`")
+                    st.markdown(f"**Reason**\n\n{ticket['reason']}")
+                    st.markdown(f"**Diagnostic summary**\n\n{ticket['diagnostic_summary']}")
+
+            _pending_callout(
+                f"Confirm to submit this ticket to <strong>{ticket['queue']}</strong> "
+                f"and notify the on-call technician."
+            )
+            c1, c2, _ = st.columns([2, 2, 3])
+            with c1:
+                st.button("✓ Send to ServiceNow", on_click=_send_decline_ticket,
+                          type="primary", use_container_width=True)
+            with c2:
+                st.button("✗ Cancel", on_click=_cancel_decline_ticket, use_container_width=True)
+
+        elif state == "declined_sent" and st.session_state.tool_result:
+            tr = st.session_state.tool_result
+            ticket_id = st.session_state.get("preview_ticket_id", "INC0000000")
+            queue = st.session_state.decline_ticket["queue"]
+            st.success(
+                f"**Ticket {ticket_id} submitted (simulated)**\n\n"
+                f"Redirecting to ServiceNow... *(simulated)*\n\n"
+                f"On-call technician for `{queue}` notified. SLA clock started."
+            )
+            st.caption(f"Timestamp: {tr['timestamp']}")
+
+        elif state == "declined_cancelled":
+            st.warning("Escalation skipped by operator. No fix applied, no ticket created.")
 
     elif path == "ESCALATE":
         if result["tool_name"] == "create_escalation_ticket":

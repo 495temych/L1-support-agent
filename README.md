@@ -35,8 +35,8 @@ For the customer, this reads as: **for every technician running L1 support, Tria
 MTTR is an operational metric IT already tracks and trusts — it proves the tool works at the technical level (tickets resolve faster). % of tickets resolved without technician dispatch is the automation rate that feeds directly into the CHF table above — it's the one lever the business case actually depends on. Together they form a single reporting pair that speaks both languages at once: an IT lead reads MTTR and sees service quality; a CTO reads the same dashboard's automation % and reads it straight through to the recovered-hours table. 
 
 ### Data potential
-Each triage interaction logs (query, retrieved doc, decision path, operator action). Over time this supports:
-- Retrieval threshold tuning (precision vs. recall tradeoff, per category)
+Every triage run appends a row to `logs.csv` — query, retrieved units, decision path, diagnostic summary, tool called, operator confirmation, escalation queue/priority, response time — and the app's "Live session stats" panel turns that into a running summary (path distribution, automation rate, avg response time) shown alongside the golden-set eval (see [Evaluation](#evaluation)). Over time, the same log supports:
+- Retrieval threshold tuning, per category
 - Cost-per-resolution-path analysis (AUTO_FIX cost vs. ESCALATE technician-hour cost)
 - A natural link to quantitative/pricing-style analysis of automation vs. human dispatch
 
@@ -50,7 +50,7 @@ Each triage interaction logs (query, retrieved doc, decision path, operator acti
 
 **Decision flow:** single-shot (one LLM call per query). The model receives the query + up to 2 retrieved KB units — possibly from different source documents — and must classify immediately into SELF_SERVE / AUTO_FIX / ESCALATE / OUT_OF_SCOPE, synthesizing across all retrieved units, and call the appropriate tool. No multi-turn — missing information forces an explicit ESCALATE with reasoning rather than a clarifying question. When RAG is off, no tools are offered at all (not just no retrieval) — the agent can only respond in plain, ungrounded text; see the RAG on/off toggle below.
 
-**Tool execution:** the agent returns a structured tool call (name + parameters). The app shows the proposed action to the operator before anything runs. On Confirm, the tool is dispatched; on Cancel, nothing changes. Both paths are logged with a timestamp.
+**Tool execution:** the agent returns a structured tool call (name + parameters). The app shows the proposed action to the operator before anything runs. On Confirm, the tool is dispatched. On Cancel, behavior depends on the path: for ESCALATE, nothing changes and no ticket is created; for AUTO_FIX, declining pre-fills an escalation ticket from the diagnosis already in that response (no new model call) and asks for a separate confirmation before it's sent. Every terminal state is logged with a timestamp.
 
 ---
 
@@ -72,17 +72,25 @@ flowchart LR
     F --> I["👤 Human confirmation\nConfirm / Cancel"]
     G --> I
     I -- Confirmed --> J["⚡ Action\nmocked tool / ticket"]
-    I -- Cancelled --> K["Skipped\nno changes made"]
+    I -- "Cancelled (ESCALATE)" --> K["Skipped\nno ticket created"]
+    I -- "Cancelled (AUTO_FIX)" --> L["📝 Pre-filled ticket\nfrom existing diagnosis\nno new model call"]
+    L --> M["👤 Confirm / Cancel\nSend to ServiceNow"]
+    M -- Confirmed --> J
+    M -- Cancelled --> K
 ```
 
 | Path | When | Operator action required? |
 |---|---|---|
 | **SELF_SERVE** | Fix is documented, safe, and user-executable | No — steps returned directly; "didn't resolve it" button escalates (see below) |
-| **AUTO_FIX** | Fix is documented, reversible, better run by the agent | Yes — Confirm or Cancel before tool runs |
-| **ESCALATE** | Info missing, infra-side issue, or low confidence | Yes — Confirm or Cancel before ticket is created |
-| **OUT_OF_SCOPE** | Not an IT support request | No — declined immediately |
+| **AUTO_FIX** | Fix is documented, reversible, better run by the agent | Yes — Confirm runs the tool; Cancel pre-fills an escalation ticket instead of just dropping the issue (see below) |
+| **ESCALATE** | Info missing, infra-/hardware-/IAM-side issue, or low confidence | Yes — Confirm or Cancel before ticket is created |
+| **OUT_OF_SCOPE** | Not a workplace-technology request at all | No — declined immediately |
+
+**Scope check:** OUT_OF_SCOPE is reserved for requests unrelated to workplace technology (weather, personal advice, general knowledge, creative tasks). An IT-related request that needs identity/access-management, security-team, or admin-level action beyond user self-service — adding someone to a security group, granting elevated permissions, a suspected account compromise — is not out of scope. It's real IT work that exceeds desktop-support scope, so it routes to ESCALATE, not OUT_OF_SCOPE.
 
 **SELF_SERVE fallback:** if the returned steps don't fix it, a button on the result ("This didn't resolve it — escalate to a technician") converts the result in place into the same ESCALATE ticket-preview/Confirm/Cancel flow — reusing `create_escalation_ticket` rather than adding a new tool. The generated summary explicitly notes self-serve was already attempted, so the receiving technician doesn't repeat those steps; queue defaults to `DESKTOP-SUPPORT`, priority `P3-Normal`.
+
+**AUTO_FIX decline:** declining a proposed fix doesn't end the flow either. The app pre-fills an escalation ticket client-side from the diagnosis already produced in that response — no second model call — carrying the declined tool's name, a fixed reason ("User declined proposed automated fix; issue persists"), the existing diagnostic summary, and a `P3-Normal` default priority. That ticket gets its own, separate Confirm ("Send to ServiceNow") / Cancel step before `create_escalation_ticket` actually runs. Accepting AUTO_FIX and declining it both end up at the same human-confirmation pattern — they diverge only in what's being confirmed, not in whether confirmation is required.
 
 **RAG off:** none of the four paths above apply. The agent is given no tools at all for that call, so it cannot classify or act — it just returns hedged, ungrounded text, and the UI shows a distinct `NO TOOLS (RAG OFF)` badge instead of a path badge.
 
@@ -134,22 +142,28 @@ The tool schema (`create_escalation_ticket`) is already structured to map 1-to-1
 
 \* This bare query is genuinely underspecified — KB-0142 (`vpn.md`) documents three distinct causes, only one of which is safe to auto-fix, so single-shot classification can legitimately land on SELF_SERVE, AUTO_FIX, or ESCALATE from run to run. The more detailed query further down this table (with gateway + offline duration stated) resolves this ambiguity and consistently hits AUTO_FIX. Measured in `eval.py` — see [Evaluation](#evaluation).
 
+### Manual test: declining an AUTO_FIX
+
+Run "My VPN cert error persists, I've confirmed the gateway is correct and I was offline for a month" (routes to AUTO_FIX → `reset_vpn_profile`), then click **Cancel** instead of Confirm. The app shows "Automated fix declined — here's a pre-filled ticket," built entirely from the diagnosis already displayed in section 3 above — no second model call. The draft ticket carries the declined tool name (`reset_vpn_profile`), the fixed reason "User declined proposed automated fix; issue persists," the original diagnostic summary, queue `DESKTOP-SUPPORT`, and priority `P3-Normal`. Clicking "Send to ServiceNow" dispatches `create_escalation_ticket` exactly as the ESCALATE path does; clicking Cancel again dismisses it with no ticket created and no fix applied. This is a UI/state-flow behavior, not a retrieval or path-classification outcome, so it isn't part of `eval.py`'s golden set — verify it manually with the steps above.
+
 ---
 
 ## Evaluation
 
-`eval.py` runs a hand-labeled golden set of 10 queries — the same ones in the table above — directly against `retrieve()` and `run_triage()`, no UI involved. **This is a labeled set of 10 we wrote ourselves, not an external or third-party benchmark** — treat the numbers as a regression check on this specific KB and prompt, not a generalizable retrieval-quality claim. Run it yourself: `python eval.py`.
+The app surfaces two independent measurements side by side, each in its own expander, clearly labeled — neither stands in for the other.
+
+**Golden-set evaluation** (`eval.py`) runs a hand-labeled set of 10 queries — the same ones in the table above — directly against `retrieve()` and `run_triage()`, no UI involved. **This is a labeled set of 10 we wrote ourselves, not an external or third-party benchmark** — treat the numbers as a regression check on this specific KB and prompt, not a generalizable retrieval-quality claim. Run it yourself: `python eval.py`.
 
 | Metric | Result | What it measures |
 |---|---|---|
 | Retrieval accuracy (top-1) | 100% | The single best-ranked unit is a correct match for the query |
-| Precision@2 | 90% | Of the (up to 2) units returned, the fraction that are actually relevant — dips below 100% only when top-k=2 pulls in a tangentially-related `company-profile.md` section alongside the correct single-source match |
-| Recall@2 | 100% | Of the relevant unit(s), the fraction retrieval actually found — including both units on the deliberate cross-document case ("Locked out twice already today") |
 | Path accuracy | 90–100%\* | Fraction of queries classified into the stated expected path |
 
-\* Path accuracy varies run to run (observed 90% and 100% across repeated runs) — it is not retrieval that's unstable (retrieval is deterministic given fixed embeddings and always scored 100%/90%/100% above), it's LLM sampling on the one genuinely underspecified query in the set (see the VPN row footnote above). This is exactly the kind of case single-shot classification handles by escalating with stated reasoning rather than guessing — which is arguably still a "correct" outcome the golden set's single expected-path label doesn't fully capture.
+Only these two metrics are reported. Precision/recall-style set-overlap metrics don't fit this retrieval design: because top-k=2 deliberately pulls from more than one source when relevant (an issue playbook plus a company-profile.md section, or two playbooks together), a correctly grounded answer can legitimately come back with a second, tangentially related unit alongside the strictly-required one — a set-overlap metric scores that as a false positive even though nothing is actually wrong, so top-1 retrieval accuracy is the metric that reflects retrieval quality here.
 
-Only the "Locked out twice already today" case has more than one expected unit, so it's the only row where precision@2/recall@2 diverge meaningfully from plain top-1 accuracy; every other row's expected set has exactly one unit, making precision@2, recall@2, and top1_correct trivially equal for that row unless a spurious extra unit is retrieved (as happened for two of the single-unit rows here).
+\* Path accuracy varies run to run (observed 90% and 100% across repeated runs) — it is not retrieval that's unstable (retrieval is deterministic given fixed embeddings and scores 100% consistently above), it's LLM sampling on the one genuinely underspecified query in the set (see the VPN row footnote above). This is exactly the kind of case single-shot classification handles by escalating with stated reasoning rather than guessing — which is arguably still a "correct" outcome the golden set's single expected-path label doesn't fully capture.
+
+**Live session stats** (`analyze_logs.py`, reading `logs.csv`) is a different measurement: real usage, not a fixed test set. `logs.csv` starts empty, and one row is appended after every query actually run through the app — timestamp, query, retrieved units, decision path, diagnostic summary, tool called, operator confirmation (AUTO_FIX rows only), escalation queue/priority (ESCALATE rows only), and measured response time. The app's "Live session stats" expander reads this file fresh on every render — never cached, unlike the golden-set numbers above — and reports total logged queries, count and % by decision path, automation rate (SELF_SERVE + AUTO_FIX over total minus OUT_OF_SCOPE), and average response time by path, labeled explicitly as **"Agent response time (proxy for MTTR — measures decision latency, not full ticket resolution)"** since it only times the model call that produces a decision, not how long a human then takes to act on it. Below five logged queries, the panel says the sample is too small for a stable rate rather than presenting a percentage as reliable. Run it standalone: `python analyze_logs.py`.
 
 ---
 
