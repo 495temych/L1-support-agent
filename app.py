@@ -136,16 +136,24 @@ def _pending_callout(label: str) -> None:
 
 # ── Presets ─────────────────────────────────────────────────────────────────────
 PRESETS = [
-    # AUTO_FIX demos
-    "My VPN keeps disconnecting",
+    # AUTO_FIX demos — single source
+    "My VPN cert error persists, I've confirmed the gateway is correct and I was offline for a month",
     "Teams shows me as offline to everyone",
     "Floor 5 print queue is stuck, several people can't print",
-    "My VPN cert error persists, I've confirmed the gateway is correct and I was offline for a month",
     "I need Zoom installed but I don't have admin rights — it's listed in Company Portal",
-    # ESCALATE demos
+    # ESCALATE demos — single source
     "I'm locked out of my account",
-    "My OneDrive has been stuck syncing for two days",
     "My external monitor isn't detected when docked",
+    # Cross-document retrieval demos — one query pulls units from two different KB
+    # documents in the same call (an issue playbook + a company-profile.md section,
+    # or two issue playbooks together)
+    "I've been locked out of my account twice already today",
+    "My OneDrive won't sync one of my report files, I'm in Finance and we use # in filenames for versions",
+    "My mapped network drive for Finance is gone since this morning, VPN is connected fine",
+    "Outlook keeps asking me to sign in again and again today",
+    # More single-document coverage
+    "Wi-Fi keeps dropping for everyone near the open-plan area on floor 5, seems like too many devices on one access point",
+    "My laptop has been unbearably slow since this weekend, fans running constantly",
     # OUT_OF_SCOPE demo
     "What's the weather like today?",
 ]
